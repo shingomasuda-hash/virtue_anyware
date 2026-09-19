@@ -1,0 +1,20 @@
+node_modules/
+.next/
+out/
+build/
+dist/
+coverage/
+*.log
+npm-debug.log*
+.env
+.env.*
+!.env.example
+.DS_Store
+.vercel
+*.tsbuildinfo
+next-env.d.ts
+/prisma/*.db
+/tmp/
+
+# Prisma generated client (npm run build で再生成される)
+/src/generated/

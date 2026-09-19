@@ -1,0 +1,1619 @@
+// VIRTUE Sales OS — データモデル
+// 設計意図は docs/03_DATA_MODEL.md を参照。
+// 原則: 1) 全 fact に organizationId / 販売系に agencyId  2) 金額はスナップショット保存
+//       3) fact/dimension を意識  4) 商材を電力専用に固定しない
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─────────────────────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────────────────────
+
+enum UserRole {
+  SUPER_ADMIN
+  HQ_ADMIN
+  HQ_STAFF
+  AGENCY_ADMIN
+  AGENCY_STAFF
+}
+
+enum RecordStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum ProductCategory {
+  ELECTRICITY
+  GAS
+  SOLAR
+  BATTERY
+  SOLAR_BATTERY
+  WATER_SERVER
+  INTERNET
+  EV_CHARGER
+  REFORM
+  OTHER
+}
+
+/// 数量単位。契約の quantity が何を意味するかを決める。
+enum QuantityUnit {
+  WATT
+  CONTRACT
+  AMOUNT
+}
+
+/// 単価の適用方法。計算ストラテジと 1:1 で対応する。
+enum PriceUnitType {
+  PER_WATT
+  PER_CONTRACT
+  PERCENT_OF_AMOUNT
+  FIXED
+}
+
+/// 単価の向き。本部が受け取る側か、代理店へ支払う側か。
+enum PricingSide {
+  HQ_RECEIVE
+  AGENCY_PAYOUT
+}
+
+enum FunnelStage {
+  TARGET
+  CALLED
+  CONNECTED
+  INTERESTED
+  APPOINTMENT
+  TOSSUP
+  MEETING
+  WON
+  LOST
+  EXCLUDED
+}
+
+enum ImportBatchStatus {
+  DRAFT
+  VALIDATED
+  COMMITTED
+  FAILED
+  ROLLED_BACK
+}
+
+enum ImportRowStatus {
+  PENDING
+  CREATED
+  UPDATED
+  SKIPPED_DUPLICATE
+  NEEDS_REVIEW
+  FAILED
+}
+
+enum ImportTargetEntity {
+  CUSTOMER_CONTRACT
+  CUSTOMER
+  CONTRACT
+  EXPENSE
+  EVENT_METRIC
+}
+
+enum ActivityType {
+  CSV_IMPORT
+  CUSTOMER_CREATED
+  CUSTOMER_UPDATED
+  CONTRACT_CREATED
+  CONTRACT_UPDATED
+  STATUS_CHANGED
+  CALL
+  MEMO
+  APPOINTMENT
+  TOSSUP
+  MEETING
+  WON
+  LOST
+  CANCELLED
+}
+
+enum UpsellActivityType {
+  CALL
+  MEMO
+  STATUS_CHANGE
+  APPOINTMENT
+  MEETING
+}
+
+enum TossupStatus {
+  TOSSED
+  ACCEPTED
+  MEETING_SCHEDULED
+  MEETING_DONE
+  QUOTED
+  WON
+  LOST
+  CANCELLED
+}
+
+enum EventStatus {
+  PLANNED
+  CONFIRMED
+  RUNNING
+  FINISHED
+  CANCELLED
+}
+
+enum EmploymentType {
+  EMPLOYEE
+  PART_TIME
+  CONTRACTOR
+  AGENCY_STAFF
+}
+
+enum CompensationType {
+  HOURLY
+  DAILY
+  FIXED
+  COMMISSION
+}
+
+enum PartnerKind {
+  TOSSUP
+  VENDOR
+  SUPPLIER
+  OTHER
+}
+
+enum TaxCategory {
+  TAXABLE_10
+  TAXABLE_8
+  TAX_FREE
+  NON_TAXABLE
+  EXEMPT
+}
+
+enum ExpenseStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  PENDING_PAYMENT
+  PAID
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  SENT
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  VOID
+}
+
+enum ReceivableStatus {
+  NOT_BILLED
+  BILLED
+  AWAITING_PAYMENT
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+enum PayableStatus {
+  PLANNED
+  CONFIRMED
+  PROCESSING
+  PAID
+  CANCELLED
+}
+
+enum SettlementStatus {
+  DRAFT
+  CONFIRMED
+  PROCESSING
+  PAID
+}
+
+enum AllocationBasis {
+  CONTRACT_COUNT
+  REVENUE
+  WORK_HOURS
+  MANUAL
+}
+
+enum PaymentMethod {
+  BANK_TRANSFER
+  CASH
+  CREDIT_CARD
+  E_MONEY
+  OTHER
+}
+
+enum RevenueSourceType {
+  CONTRACT
+  TOSSUP
+  OTHER
+}
+
+// ─────────────────────────────────────────────────────────────
+// テナント / 認証（Better Auth 互換）
+// ─────────────────────────────────────────────────────────────
+
+model Organization {
+  id        String       @id @default(cuid())
+  code      String       @unique
+  name      String
+  status    RecordStatus @default(ACTIVE)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  users            User[]
+  agencies         Agency[]
+  customers        Customer[]
+  contracts        Contract[]
+  products         Product[]
+  suppliers        Supplier[]
+  contractStatuses ContractStatus[]
+  upsellStatuses   UpsellStatus[]
+  pricingRules     PricingRule[]
+  staff            Staff[]
+  facilities       Facility[]
+  events           Event[]
+  boothTags        BoothTag[]
+  partners         Partner[]
+  expenseCategories ExpenseCategory[]
+  accountingCategories AccountingCategory[]
+  expenses         Expense[]
+  revenues         Revenue[]
+  invoices         Invoice[]
+  receivables      Receivable[]
+  payables         Payable[]
+  settlements      Settlement[]
+  importBatches    ImportBatch[]
+  csvTemplates     CsvTemplate[]
+  auditLogs        AuditLog[]
+  costAllocations  CostAllocation[]
+
+  @@map("organizations")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  emailVerified Boolean   @default(false)
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // 追加フィールド（Better Auth additionalFields）
+  role           UserRole  @default(HQ_STAFF)
+  organizationId String?
+  agencyId       String?
+  phone          String?
+  isActive       Boolean   @default(true)
+  lastLoginAt    DateTime?
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  agency       Agency?       @relation(fields: [agencyId], references: [id], onDelete: SetNull)
+
+  sessions Session[]
+  accounts Account[]
+
+  staffProfile        Staff?
+  assignedCustomers   Customer[]          @relation("CustomerAssignee")
+  managedEvents       Event[]             @relation("EventManager")
+  customerActivities  CustomerActivity[]
+  upsellLeads         UpsellLead[]        @relation("UpsellAssignee")
+  upsellActivities    UpsellActivity[]
+  importBatches       ImportBatch[]
+  auditLogs           AuditLog[]
+  pricingRulesCreated PricingRule[]       @relation("PricingRuleCreator")
+  agencyPricesCreated AgencyUnitPrice[]   @relation("AgencyUnitPriceCreator")
+  expensesPaid        Expense[]           @relation("ExpensePayer")
+  expenseApprovals    ExpenseApproval[]
+  snapshotsCreated    ContractPricingSnapshot[] @relation("SnapshotCreator")
+
+  @@index([organizationId, role])
+  @@index([agencyId])
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  accountId             String
+  providerId            String
+  userId                String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verifications")
+}
+
+// ─────────────────────────────────────────────────────────────
+// 代理店
+// ─────────────────────────────────────────────────────────────
+
+model Agency {
+  id             String       @id @default(cuid())
+  organizationId String
+  code           String
+  name           String
+  corporateName  String?
+  contactPerson  String?
+  phone          String?
+  email          String?
+  postalCode     String?
+  prefecture     String?
+  city           String?
+  address        String?
+  building       String?
+  contractStartDate DateTime?
+  contractEndDate   DateTime?
+  status         RecordStatus @default(ACTIVE)
+  /// 支払条件（例: 月末締め翌月末払い）
+  paymentTerms   String?
+  paymentClosingDay Int?
+  paymentMonthOffset Int?      @default(1)
+  paymentDay     Int?
+  bankName       String?
+  bankBranch     String?
+  bankAccountType String?
+  bankAccountNumber String?
+  bankAccountHolder String?
+  notes          String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  deletedAt      DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  users        User[]
+  unitPrices   AgencyUnitPrice[]
+  customers    Customer[]
+  contracts    Contract[]
+  staff        Staff[]
+  events       Event[]
+  eventAgencies EventAgency[]
+  pricingRules PricingRule[]
+  settlements  Settlement[]
+  expenses     Expense[]
+  revenues     Revenue[]
+  importBatches ImportBatch[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId, status])
+  @@map("agencies")
+}
+
+/// 代理店ごとの単価履歴（適用期間つき）。過去契約の金額はスナップショットで保護される。
+model AgencyUnitPrice {
+  id            String        @id @default(cuid())
+  agencyId      String
+  productId     String?
+  unitType      PriceUnitType @default(PER_WATT)
+  unitPrice     Decimal       @db.Decimal(12, 4)
+  effectiveFrom DateTime      @db.Date
+  effectiveTo   DateTime?     @db.Date
+  note          String?
+  createdById   String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  agency    Agency   @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  createdBy User?    @relation("AgencyUnitPriceCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([agencyId, productId, effectiveFrom])
+  @@map("agency_unit_prices")
+}
+
+// ─────────────────────────────────────────────────────────────
+// マスタ
+// ─────────────────────────────────────────────────────────────
+
+model Product {
+  id             String          @id @default(cuid())
+  organizationId String
+  code           String
+  name           String
+  category       ProductCategory
+  quantityUnit   QuantityUnit    @default(CONTRACT)
+  /// アップセル対象商材かどうか（太陽光/蓄電池など）
+  isUpsell       Boolean         @default(false)
+  sortOrder      Int             @default(0)
+  isActive       Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  contracts    Contract[]
+  pricingRules PricingRule[]
+  agencyPrices AgencyUnitPrice[]
+  upsellLeads  UpsellLead[]
+  tossups      Tossup[]
+  revenues     Revenue[]
+  plans        Plan[]
+
+  @@unique([organizationId, code])
+  @@map("products")
+}
+
+model Supplier {
+  id             String       @id @default(cuid())
+  organizationId String
+  code           String
+  name           String
+  status         RecordStatus @default(ACTIVE)
+  notes          String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  plans        Plan[]
+  contracts    Contract[]
+  pricingRules PricingRule[]
+
+  @@unique([organizationId, code])
+  @@map("suppliers")
+}
+
+model Plan {
+  id         String   @id @default(cuid())
+  supplierId String
+  productId  String?
+  code       String
+  name       String
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  supplier     Supplier      @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  product      Product?      @relation(fields: [productId], references: [id], onDelete: SetNull)
+  contracts    Contract[]
+  pricingRules PricingRule[]
+
+  @@unique([supplierId, code])
+  @@map("plans")
+}
+
+model ContractStatus {
+  id               String   @id @default(cuid())
+  organizationId   String
+  code             String
+  label            String
+  sortOrder        Int      @default(0)
+  /// 有効契約として売上/支払集計に含めるか
+  isActiveContract Boolean  @default(true)
+  isCancelled      Boolean  @default(false)
+  isDefect         Boolean  @default(false)
+  isTerminal       Boolean  @default(false)
+  color            String   @default("slate")
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contracts    Contract[]
+
+  @@unique([organizationId, code])
+  @@map("contract_statuses")
+}
+
+model UpsellStatus {
+  id             String      @id @default(cuid())
+  organizationId String
+  code           String
+  label          String
+  sortOrder      Int         @default(0)
+  funnelStage    FunnelStage @default(TARGET)
+  isWon          Boolean     @default(false)
+  isLost         Boolean     @default(false)
+  color          String      @default("slate")
+  isActive       Boolean     @default(true)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  organization     Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  upsellLeads      UpsellLead[]
+  upsellActivities UpsellActivity[]
+
+  @@unique([organizationId, code])
+  @@map("upsell_statuses")
+}
+
+/// 単価マスタ。単価はコードに書かず必ずここから解決する（§6）。
+model PricingRule {
+  id             String        @id @default(cuid())
+  organizationId String
+  side           PricingSide
+  agencyId       String?
+  productId      String?
+  supplierId     String?
+  planId         String?
+  unitType       PriceUnitType @default(PER_WATT)
+  unitPrice      Decimal       @db.Decimal(12, 4)
+  /// PERCENT_OF_AMOUNT のときの率（0-1）
+  rate           Decimal?      @db.Decimal(9, 6)
+  effectiveFrom  DateTime      @db.Date
+  effectiveTo    DateTime?     @db.Date
+  priority       Int           @default(0)
+  note           String?
+  createdById    String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  agency       Agency?      @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  product      Product?     @relation(fields: [productId], references: [id], onDelete: SetNull)
+  supplier     Supplier?    @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  plan         Plan?        @relation(fields: [planId], references: [id], onDelete: SetNull)
+  createdBy    User?        @relation("PricingRuleCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, side, effectiveFrom])
+  @@index([agencyId, side])
+  @@map("pricing_rules")
+}
+
+// ─────────────────────────────────────────────────────────────
+// 顧客 / 契約
+// ─────────────────────────────────────────────────────────────
+
+model Customer {
+  id                 String    @id @default(cuid())
+  organizationId     String
+  agencyId           String?
+  /// CSV 由来の外部顧客ID（重複判定キー 2）
+  externalCustomerId String?
+  name               String
+  nameKana           String?
+  phone              String?
+  /// 数字のみに正規化した電話番号（重複判定キー 3）
+  phoneNormalized    String?
+  email              String?
+  postalCode         String?
+  prefecture         String?
+  city               String?
+  address            String?
+  building           String?
+  birthDate          DateTime? @db.Date
+  assignedUserId     String?
+  /// 獲得した催事（催事LTV分析の起点）
+  sourceEventId      String?
+  sourceBoothId      String?
+  acquiredAt         DateTime?
+  notes              String?
+  createdByBatchId   String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  deletedAt          DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  agency       Agency?      @relation(fields: [agencyId], references: [id], onDelete: SetNull)
+  assignedUser User?        @relation("CustomerAssignee", fields: [assignedUserId], references: [id], onDelete: SetNull)
+  sourceEvent  Event?       @relation("CustomerSourceEvent", fields: [sourceEventId], references: [id], onDelete: SetNull)
+  sourceBooth  Booth?       @relation("CustomerSourceBooth", fields: [sourceBoothId], references: [id], onDelete: SetNull)
+
+  contracts   Contract[]
+  activities  CustomerActivity[]
+  upsellLeads UpsellLead[]
+  revenues    Revenue[]
+
+  @@index([organizationId, agencyId])
+  @@index([organizationId, phoneNormalized])
+  @@index([organizationId, externalCustomerId])
+  @@index([organizationId, name])
+  @@map("customers")
+}
+
+model Contract {
+  id             String    @id @default(cuid())
+  organizationId String
+  agencyId       String?
+  customerId     String
+  productId      String
+  contractNumber String?
+  supplierId     String?
+  planId         String?
+  /// 契約数量。電力なら W、その他は件数や金額（products.quantityUnit で解釈）
+  quantity       Decimal   @default(0) @db.Decimal(14, 2)
+  /// 契約ワット数（§6 の contract_watt。電力商材での quantity と同値）
+  contractWatt   Decimal   @default(0) @db.Decimal(14, 2)
+  /// 太陽光等で販売額ベース計算をする場合の基準額
+  baseAmount     Decimal?  @db.Decimal(18, 2)
+  statusId       String
+  appliedAt      DateTime? @db.Date
+  contractedAt   DateTime? @db.Date
+  activatedAt    DateTime? @db.Date
+  cancelledAt    DateTime? @db.Date
+  cancelReason   String?
+  /// 契約成立時刻（時間帯分析用 §59）
+  contractedTime DateTime?
+  eventId        String?
+  boothId        String?
+  staffId        String?
+  campaign       String?
+  notes          String?
+
+  // ── 単価スナップショット（§6）。単価マスタ改定の影響を受けない ──
+  hqUnitPrice     Decimal @default(0) @db.Decimal(12, 4)
+  agencyUnitPrice Decimal @default(0) @db.Decimal(12, 4)
+  hqRevenue       Decimal @default(0) @db.Decimal(18, 2)
+  agencyPayout    Decimal @default(0) @db.Decimal(18, 2)
+  hqGrossProfit   Decimal @default(0) @db.Decimal(18, 2)
+  grossMargin     Decimal @default(0) @db.Decimal(9, 6)
+  pricedAt        DateTime?
+
+  createdByBatchId String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  agency       Agency?         @relation(fields: [agencyId], references: [id], onDelete: SetNull)
+  customer     Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  product      Product         @relation(fields: [productId], references: [id])
+  supplier     Supplier?       @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  plan         Plan?           @relation(fields: [planId], references: [id], onDelete: SetNull)
+  status       ContractStatus  @relation(fields: [statusId], references: [id])
+  event        Event?          @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  booth        Booth?          @relation(fields: [boothId], references: [id], onDelete: SetNull)
+  staff        Staff?          @relation(fields: [staffId], references: [id], onDelete: SetNull)
+
+  pricingSnapshots ContractPricingSnapshot[]
+  revenues         Revenue[]
+  activities       CustomerActivity[]
+  upsellLeads      UpsellLead[]      @relation("UpsellSourceContract")
+  settlementItems  SettlementItem[]
+
+  @@unique([organizationId, contractNumber])
+  @@index([organizationId, agencyId, contractedAt])
+  @@index([organizationId, statusId])
+  @@index([eventId, boothId])
+  @@index([staffId])
+  @@index([customerId])
+  @@map("contracts")
+}
+
+/// 契約金額の計算履歴。再計算のたびに1行追加し、根拠を残す。
+model ContractPricingSnapshot {
+  id              String        @id @default(cuid())
+  contractId      String
+  reason          String
+  basisDate       DateTime      @db.Date
+  quantity        Decimal       @db.Decimal(14, 2)
+  hqUnitPrice     Decimal       @db.Decimal(12, 4)
+  agencyUnitPrice Decimal       @db.Decimal(12, 4)
+  hqUnitType      PriceUnitType
+  agencyUnitType  PriceUnitType
+  hqRevenue       Decimal       @db.Decimal(18, 2)
+  agencyPayout    Decimal       @db.Decimal(18, 2)
+  hqGrossProfit   Decimal       @db.Decimal(18, 2)
+  grossMargin     Decimal       @db.Decimal(9, 6)
+  hqPricingRuleId String?
+  agencyPriceId   String?
+  calcVersion     String        @default("v1")
+  createdById     String?
+  createdAt       DateTime      @default(now())
+
+  contract  Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  createdBy User?    @relation("SnapshotCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([contractId, createdAt])
+  @@map("contract_pricing_snapshots")
+}
+
+// ─────────────────────────────────────────────────────────────
+// 対応履歴 / アップセルCRM
+// ─────────────────────────────────────────────────────────────
+
+model CustomerActivity {
+  id             String       @id @default(cuid())
+  organizationId String
+  customerId     String
+  contractId     String?
+  upsellLeadId   String?
+  type           ActivityType
+  title          String
+  body           String?
+  meta           Json?
+  actorUserId    String?
+  occurredAt     DateTime     @default(now())
+  createdAt      DateTime     @default(now())
+
+  customer   Customer    @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  contract   Contract?   @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  upsellLead UpsellLead? @relation(fields: [upsellLeadId], references: [id], onDelete: SetNull)
+  actor      User?       @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([customerId, occurredAt])
+  @@map("customer_activities")
+}
+
+model UpsellLead {
+  id               String    @id @default(cuid())
+  organizationId   String
+  customerId       String
+  productId        String
+  sourceContractId String?
+  statusId         String
+  assignedUserId   String?
+  nextActionAt     DateTime?
+  lastCalledAt     DateTime?
+  callCount        Int       @default(0)
+  /// 将来の AI アップセルスコア用（現状は未使用）
+  score            Int?
+  notes            String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  customer       Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  product        Product      @relation(fields: [productId], references: [id])
+  sourceContract Contract?    @relation("UpsellSourceContract", fields: [sourceContractId], references: [id], onDelete: SetNull)
+  status         UpsellStatus @relation(fields: [statusId], references: [id])
+  assignedUser   User?        @relation("UpsellAssignee", fields: [assignedUserId], references: [id], onDelete: SetNull)
+
+  activities UpsellActivity[]
+  tossups    Tossup[]
+  activityLogs CustomerActivity[]
+
+  @@unique([customerId, productId])
+  @@index([organizationId, statusId])
+  @@index([organizationId, nextActionAt])
+  @@map("upsell_leads")
+}
+
+model UpsellActivity {
+  id           String             @id @default(cuid())
+  upsellLeadId String
+  type         UpsellActivityType
+  calledAt     DateTime?
+  connected    Boolean?
+  reaction     String?
+  nextCallAt   DateTime?
+  memo         String?
+  statusId     String?
+  userId       String?
+  createdAt    DateTime           @default(now())
+
+  upsellLead UpsellLead    @relation(fields: [upsellLeadId], references: [id], onDelete: Cascade)
+  status     UpsellStatus? @relation(fields: [statusId], references: [id], onDelete: SetNull)
+  user       User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([upsellLeadId, createdAt])
+  @@map("upsell_activities")
+}
+
+model Partner {
+  id             String        @id @default(cuid())
+  organizationId String
+  code           String
+  name           String
+  /// TOSSUP(トスアップ先) / VENDOR(経費取引先) / SUPPLIER(上位会社) を兼ねられる
+  kinds          PartnerKind[]
+  contactPerson  String?
+  phone          String?
+  email          String?
+  address        String?
+  status         RecordStatus  @default(ACTIVE)
+  notes          String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  tossups      Tossup[]
+  expenses     Expense[]
+  invoices     Invoice[]
+  payables     Payable[]
+
+  @@unique([organizationId, code])
+  @@map("partners")
+}
+
+model Tossup {
+  id                  String       @id @default(cuid())
+  organizationId      String
+  upsellLeadId        String
+  partnerId           String?
+  productId           String?
+  tossedAt            DateTime     @db.Date
+  partnerContactName  String?
+  meetingScheduledAt  DateTime?
+  expectedRevenue     Decimal?     @db.Decimal(18, 2)
+  referralFee         Decimal?     @db.Decimal(18, 2)
+  status              TossupStatus @default(TOSSED)
+  result              String?
+  closedAt            DateTime?    @db.Date
+  actualRevenue       Decimal?     @db.Decimal(18, 2)
+  notes               String?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  upsellLead UpsellLead @relation(fields: [upsellLeadId], references: [id], onDelete: Cascade)
+  partner    Partner?   @relation(fields: [partnerId], references: [id], onDelete: SetNull)
+  product    Product?   @relation(fields: [productId], references: [id], onDelete: SetNull)
+  revenues   Revenue[]
+
+  @@index([organizationId, status])
+  @@index([upsellLeadId])
+  @@map("tossups")
+}
+
+// ─────────────────────────────────────────────────────────────
+// 催事 / 施設 / ブース / スタッフ
+// ─────────────────────────────────────────────────────────────
+
+model Facility {
+  id             String   @id @default(cuid())
+  organizationId String
+  code           String
+  name           String
+  operatorName   String?
+  facilityType   String?
+  postalCode     String?
+  prefecture     String?
+  city           String?
+  address        String?
+  latitude       Decimal? @db.Decimal(10, 7)
+  longitude      Decimal? @db.Decimal(10, 7)
+  floorAreaSqm   Decimal? @db.Decimal(12, 2)
+  storeCount     Int?
+  visitorProfile String?
+  weekdayVisitors Int?
+  weekendVisitors Int?
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  events       Event[]
+  booths       Booth[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId, prefecture])
+  @@map("facilities")
+}
+
+model Event {
+  id             String      @id @default(cuid())
+  organizationId String
+  facilityId     String
+  agencyId       String?
+  code           String
+  name           String
+  storeName      String?
+  managerUserId  String?
+  startDate      DateTime    @db.Date
+  endDate        DateTime    @db.Date
+  openTime       String?
+  closeTime      String?
+  /// 開催日数。未設定時は endDate - startDate + 1 で導出する。
+  days           Int?
+  boothCount     Int?
+  status         EventStatus @default(PLANNED)
+  notes          String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  facility     Facility     @relation(fields: [facilityId], references: [id])
+  agency       Agency?      @relation(fields: [agencyId], references: [id], onDelete: SetNull)
+  manager      User?        @relation("EventManager", fields: [managerUserId], references: [id], onDelete: SetNull)
+
+  booths          Booth[]
+  agencies        EventAgency[]
+  shifts          EventStaffShift[]
+  metrics         EventMetric[]
+  contracts       Contract[]
+  expenses        Expense[]
+  revenues        Revenue[]
+  sourcedCustomers Customer[] @relation("CustomerSourceEvent")
+  costAllocations CostAllocation[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId, startDate])
+  @@index([facilityId, startDate])
+  @@map("events")
+}
+
+model EventAgency {
+  id       String @id @default(cuid())
+  eventId  String
+  agencyId String
+
+  event  Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  agency Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, agencyId])
+  @@map("event_agencies")
+}
+
+model Booth {
+  id         String  @id @default(cuid())
+  eventId    String
+  facilityId String
+  code       String
+  floor      String?
+  areaName   String?
+  blockNumber String?
+  locationNote String?
+  areaSqm    Decimal? @db.Decimal(10, 2)
+  widthM     Decimal? @db.Decimal(8, 2)
+  depthM     Decimal? @db.Decimal(8, 2)
+
+  // 固定費
+  boothFee           Decimal @default(0) @db.Decimal(18, 2)
+  electricityFee     Decimal @default(0) @db.Decimal(18, 2)
+  fixtureFee         Decimal @default(0) @db.Decimal(18, 2)
+  otherEquipmentFee  Decimal @default(0) @db.Decimal(18, 2)
+  setupFee           Decimal @default(0) @db.Decimal(18, 2)
+  teardownFee        Decimal @default(0) @db.Decimal(18, 2)
+
+  // 立地詳細（§43。すべて任意）
+  trafficDirection   String?
+  aisleWidthM        Decimal? @db.Decimal(6, 2)
+  visibilityScore    Int?
+  dwellScore         Int?
+  trafficScore       Int?
+  hasCompetitor      Boolean?
+  competitorProducts String?
+  adjacentStores     String?
+  hasSeating         Boolean?
+  outreachRangeM     Decimal? @db.Decimal(6, 2)
+  facilityRestrictions String?
+  photos             Json?
+
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  event    Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  facility Facility @relation(fields: [facilityId], references: [id])
+
+  tags      EventBoothTag[]
+  shifts    EventStaffShift[]
+  metrics   EventMetric[]
+  contracts Contract[]
+  expenses  Expense[]
+  revenues  Revenue[]
+  sourcedCustomers Customer[] @relation("CustomerSourceBooth")
+
+  @@unique([eventId, code])
+  @@index([facilityId, floor, areaName])
+  @@map("booths")
+}
+
+model BoothTag {
+  id             String   @id @default(cuid())
+  organizationId String
+  code           String
+  label           String
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  booths       EventBoothTag[]
+
+  @@unique([organizationId, code])
+  @@map("booth_tags")
+}
+
+model EventBoothTag {
+  id      String @id @default(cuid())
+  boothId String
+  tagId   String
+
+  booth Booth    @relation(fields: [boothId], references: [id], onDelete: Cascade)
+  tag   BoothTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([boothId, tagId])
+  @@map("event_booth_tags")
+}
+
+model Staff {
+  id             String         @id @default(cuid())
+  organizationId String
+  agencyId       String?
+  userId         String?        @unique
+  code           String
+  name           String
+  nameKana       String?
+  phone          String?
+  employmentType EmploymentType @default(PART_TIME)
+  status         RecordStatus   @default(ACTIVE)
+  notes          String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  organization  Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  agency        Agency?             @relation(fields: [agencyId], references: [id], onDelete: SetNull)
+  user          User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
+  compensations StaffCompensation[]
+  shifts        EventStaffShift[]
+  contracts     Contract[]
+  expenses      Expense[]
+  revenues      Revenue[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId, agencyId])
+  @@map("staff")
+}
+
+/// 給与単価（有効期間つき）。改定しても過去催事の人件費は変わらない（§62）。
+model StaffCompensation {
+  id             String           @id @default(cuid())
+  staffId        String
+  compType       CompensationType @default(HOURLY)
+  amount         Decimal          @db.Decimal(12, 2)
+  commissionRate Decimal?         @db.Decimal(9, 6)
+  effectiveFrom  DateTime         @db.Date
+  effectiveTo    DateTime?        @db.Date
+  note           String?
+  createdAt      DateTime         @default(now())
+
+  staff Staff @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@index([staffId, effectiveFrom])
+  @@map("staff_compensations")
+}
+
+model EventStaffShift {
+  id            String   @id @default(cuid())
+  eventId       String
+  boothId       String?
+  staffId       String
+  workDate      DateTime @db.Date
+  startTime     String
+  endTime       String
+  breakMinutes  Int      @default(0)
+  workedMinutes Int      @default(0)
+  /// 確定人件費（スナップショット）
+  laborCost     Decimal  @default(0) @db.Decimal(18, 2)
+  compType      CompensationType @default(HOURLY)
+  unitAmount    Decimal  @default(0) @db.Decimal(12, 2)
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  event Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  booth Booth? @relation(fields: [boothId], references: [id], onDelete: SetNull)
+  staff Staff  @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, staffId, workDate, startTime])
+  @@index([staffId, workDate])
+  @@map("event_staff_shifts")
+}
+
+/// 催事ファネル実績（§53/§54）。取得できない項目は NULL のままでよい。
+model EventMetric {
+  id           String   @id @default(cuid())
+  eventId      String
+  boothId      String?
+  metricDate   DateTime @db.Date
+  /// 時間帯スロット開始時刻（10, 12, 14 ...）。NULL は日次集計。
+  hourSlot     Int?
+  isHoliday    Boolean  @default(false)
+  passersby    Int?
+  approaches   Int?
+  stops        Int?
+  seated       Int?
+  meetings     Int?
+  applications Int?
+  contractsCount Int?
+  activations  Int?
+  cancellations Int?
+  staffCount   Int?
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  event Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  booth Booth? @relation(fields: [boothId], references: [id], onDelete: SetNull)
+
+  @@unique([eventId, boothId, metricDate, hourSlot])
+  @@index([eventId, metricDate])
+  @@map("event_metrics")
+}
+
+// ─────────────────────────────────────────────────────────────
+// 会計（経費 / 売上 / 入金 / 支払 / 請求 / 精算 / 配賦）
+// ─────────────────────────────────────────────────────────────
+
+model AccountingCategory {
+  id             String   @id @default(cuid())
+  organizationId String
+  code           String
+  name           String
+  subName        String?
+  department     String?
+  sortOrder      Int      @default(0)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  expenseCategories ExpenseCategory[]
+  expenses     Expense[]
+
+  @@unique([organizationId, code])
+  @@map("accounting_categories")
+}
+
+model ExpenseCategory {
+  id                   String   @id @default(cuid())
+  organizationId       String
+  parentId             String?
+  code                 String
+  name                 String
+  accountingCategoryId String?
+  /// 催事PLでのグルーピング（BOOTH / LABOR / TRAVEL / LODGING / PROMOTION / OTHER）
+  plGroup              String   @default("OTHER")
+  sortOrder            Int      @default(0)
+  isActive             Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  parent             ExpenseCategory?    @relation("ExpenseCategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children           ExpenseCategory[]   @relation("ExpenseCategoryTree")
+  accountingCategory AccountingCategory? @relation(fields: [accountingCategoryId], references: [id], onDelete: SetNull)
+  expenses           Expense[]
+
+  @@unique([organizationId, code])
+  @@map("expense_categories")
+}
+
+/// 経費。催事費は eventId が設定された経費として扱う（§44 event_expenses の正規化）。
+model Expense {
+  id                   String        @id @default(cuid())
+  organizationId       String
+  categoryId           String
+  accountingCategoryId String?
+  incurredOn           DateTime      @db.Date
+  amount               Decimal       @db.Decimal(18, 2)
+  taxAmount            Decimal       @default(0) @db.Decimal(18, 2)
+  taxIncluded          Boolean       @default(true)
+  taxCategory          TaxCategory   @default(TAXABLE_10)
+  paymentMethod        PaymentMethod @default(BANK_TRANSFER)
+  paidByUserId         String?
+  agencyId             String?
+  staffId              String?
+  eventId              String?
+  boothId              String?
+  partnerId            String?
+  receiptUrl           String?
+  receiptMimeType      String?
+  description          String?
+  memo                 String?
+  status               ExpenseStatus @default(DRAFT)
+  submittedAt          DateTime?
+  approvedAt           DateTime?
+  approvedByUserId     String?
+  paidOn               DateTime?     @db.Date
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+  deletedAt            DateTime?
+
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  category           ExpenseCategory     @relation(fields: [categoryId], references: [id])
+  accountingCategory AccountingCategory? @relation(fields: [accountingCategoryId], references: [id], onDelete: SetNull)
+  paidByUser         User?               @relation("ExpensePayer", fields: [paidByUserId], references: [id], onDelete: SetNull)
+  agency             Agency?             @relation(fields: [agencyId], references: [id], onDelete: SetNull)
+  staff              Staff?              @relation(fields: [staffId], references: [id], onDelete: SetNull)
+  event              Event?              @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  booth              Booth?              @relation(fields: [boothId], references: [id], onDelete: SetNull)
+  partner            Partner?            @relation(fields: [partnerId], references: [id], onDelete: SetNull)
+
+  approvals       ExpenseApproval[]
+  costAllocations CostAllocation[]
+
+  @@index([organizationId, incurredOn])
+  @@index([eventId])
+  @@index([organizationId, status])
+  @@map("expenses")
+}
+
+model ExpenseApproval {
+  id        String        @id @default(cuid())
+  expenseId String
+  fromStatus ExpenseStatus
+  toStatus  ExpenseStatus
+  actorUserId String?
+  comment   String?
+  createdAt DateTime      @default(now())
+
+  expense Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  actor   User?   @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([expenseId, createdAt])
+  @@map("expense_approvals")
+}
+
+/// 売上明細。契約由来・トスアップ由来を同一構造で扱い、全分析軸の FK を持つ。
+model Revenue {
+  id             String            @id @default(cuid())
+  organizationId String
+  sourceType     RevenueSourceType @default(CONTRACT)
+  contractId     String?
+  tossupId       String?
+  customerId     String?
+  productId      String?
+  agencyId       String?
+  eventId        String?
+  boothId        String?
+  staffId        String?
+  recognizedOn   DateTime          @db.Date
+  amount         Decimal           @db.Decimal(18, 2)
+  cost           Decimal           @default(0) @db.Decimal(18, 2)
+  agencyPayout   Decimal           @default(0) @db.Decimal(18, 2)
+  referralFee    Decimal           @default(0) @db.Decimal(18, 2)
+  grossProfit    Decimal           @default(0) @db.Decimal(18, 2)
+  grossMargin    Decimal           @default(0) @db.Decimal(9, 6)
+  note           String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contract     Contract?    @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  tossup       Tossup?      @relation(fields: [tossupId], references: [id], onDelete: SetNull)
+  customer     Customer?    @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  product      Product?     @relation(fields: [productId], references: [id], onDelete: SetNull)
+  agency       Agency?      @relation(fields: [agencyId], references: [id], onDelete: SetNull)
+  event        Event?       @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  booth        Booth?       @relation(fields: [boothId], references: [id], onDelete: SetNull)
+  staff        Staff?       @relation(fields: [staffId], references: [id], onDelete: SetNull)
+
+  receivables Receivable[]
+
+  @@index([organizationId, recognizedOn])
+  @@index([customerId])
+  @@index([eventId])
+  @@map("revenues")
+}
+
+model Invoice {
+  id             String        @id @default(cuid())
+  organizationId String
+  invoiceNumber  String
+  partnerId      String?
+  agencyId       String?
+  periodStart    DateTime?     @db.Date
+  periodEnd      DateTime?     @db.Date
+  issuedOn       DateTime      @db.Date
+  dueOn          DateTime?     @db.Date
+  subtotal       Decimal       @default(0) @db.Decimal(18, 2)
+  taxAmount      Decimal       @default(0) @db.Decimal(18, 2)
+  total          Decimal       @default(0) @db.Decimal(18, 2)
+  status         InvoiceStatus @default(DRAFT)
+  pdfUrl         String?
+  note           String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  partner      Partner?      @relation(fields: [partnerId], references: [id], onDelete: SetNull)
+  items        InvoiceItem[]
+  receivables  Receivable[]
+
+  @@unique([organizationId, invoiceNumber])
+  @@index([organizationId, issuedOn])
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id          String      @id @default(cuid())
+  invoiceId   String
+  description String
+  quantity    Decimal     @default(1) @db.Decimal(14, 2)
+  unitPrice   Decimal     @default(0) @db.Decimal(18, 2)
+  amount      Decimal     @default(0) @db.Decimal(18, 2)
+  taxCategory TaxCategory @default(TAXABLE_10)
+  sortOrder   Int         @default(0)
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@map("invoice_items")
+}
+
+/// 入金（売掛）。売上計上日と入金日を分離して保持する（§48）。
+model Receivable {
+  id             String           @id @default(cuid())
+  organizationId String
+  revenueId      String?
+  invoiceId      String?
+  counterparty   String
+  dueOn          DateTime         @db.Date
+  amount         Decimal          @db.Decimal(18, 2)
+  paidAmount     Decimal          @default(0) @db.Decimal(18, 2)
+  paidOn         DateTime?        @db.Date
+  status         ReceivableStatus @default(NOT_BILLED)
+  note           String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  revenue      Revenue?     @relation(fields: [revenueId], references: [id], onDelete: SetNull)
+  invoice      Invoice?     @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, dueOn])
+  @@index([organizationId, status])
+  @@map("receivables")
+}
+
+/// 支払（買掛）。代理店精算・取引先支払を日付ベースで管理する（§49）。
+model Payable {
+  id             String        @id @default(cuid())
+  organizationId String
+  partnerId      String?
+  settlementId   String?
+  counterparty   String
+  periodStart    DateTime?     @db.Date
+  periodEnd      DateTime?     @db.Date
+  description    String?
+  amount         Decimal       @db.Decimal(18, 2)
+  adjustment     Decimal       @default(0) @db.Decimal(18, 2)
+  dueOn          DateTime      @db.Date
+  status         PayableStatus @default(PLANNED)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  partner      Partner?     @relation(fields: [partnerId], references: [id], onDelete: SetNull)
+  settlement   Settlement?  @relation(fields: [settlementId], references: [id], onDelete: SetNull)
+  payments     Payment[]
+
+  @@index([organizationId, dueOn])
+  @@index([organizationId, status])
+  @@map("payables")
+}
+
+model Payment {
+  id        String        @id @default(cuid())
+  payableId String
+  paidOn    DateTime      @db.Date
+  amount    Decimal       @db.Decimal(18, 2)
+  method    PaymentMethod @default(BANK_TRANSFER)
+  note      String?
+  createdAt DateTime      @default(now())
+
+  payable Payable @relation(fields: [payableId], references: [id], onDelete: Cascade)
+
+  @@index([payableId])
+  @@map("payments")
+}
+
+/// 代理店精算（月次）
+model Settlement {
+  id             String           @id @default(cuid())
+  organizationId String
+  agencyId       String
+  /// 対象月（当月1日）
+  periodMonth    DateTime         @db.Date
+  contractCount  Int              @default(0)
+  totalWatt      Decimal          @default(0) @db.Decimal(16, 2)
+  payoutAmount   Decimal          @default(0) @db.Decimal(18, 2)
+  adjustment     Decimal          @default(0) @db.Decimal(18, 2)
+  cancelDeduction Decimal         @default(0) @db.Decimal(18, 2)
+  finalAmount    Decimal          @default(0) @db.Decimal(18, 2)
+  status         SettlementStatus @default(DRAFT)
+  confirmedAt    DateTime?
+  paidOn         DateTime?        @db.Date
+  note           String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  agency       Agency           @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  items        SettlementItem[]
+  payables     Payable[]
+
+  @@unique([agencyId, periodMonth])
+  @@index([organizationId, periodMonth])
+  @@map("settlements")
+}
+
+model SettlementItem {
+  id           String   @id @default(cuid())
+  settlementId String
+  contractId   String?
+  description  String
+  quantity     Decimal  @default(0) @db.Decimal(14, 2)
+  unitPrice    Decimal  @default(0) @db.Decimal(12, 4)
+  amount       Decimal  @default(0) @db.Decimal(18, 2)
+  isDeduction  Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  settlement Settlement @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+  contract   Contract?  @relation(fields: [contractId], references: [id], onDelete: SetNull)
+
+  @@index([settlementId])
+  @@map("settlement_items")
+}
+
+/// 原価配賦（§75）。配賦結果は確定保存し、後から按分元が変わっても変化させない。
+model CostAllocation {
+  id              String          @id @default(cuid())
+  organizationId  String
+  expenseId       String
+  basis           AllocationBasis @default(MANUAL)
+  targetType      String
+  eventId         String?
+  targetAgencyId  String?
+  department      String?
+  ratio           Decimal         @db.Decimal(9, 6)
+  allocatedAmount Decimal         @db.Decimal(18, 2)
+  periodMonth     DateTime?       @db.Date
+  createdAt       DateTime        @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  expense      Expense      @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  event        Event?       @relation(fields: [eventId], references: [id], onDelete: SetNull)
+
+  @@index([expenseId])
+  @@index([organizationId, periodMonth])
+  @@map("cost_allocations")
+}
+
+// ─────────────────────────────────────────────────────────────
+// CSV 取込
+// ─────────────────────────────────────────────────────────────
+
+model CsvTemplate {
+  id             String             @id @default(cuid())
+  organizationId String
+  name           String
+  description    String?
+  targetEntity   ImportTargetEntity @default(CUSTOMER_CONTRACT)
+  encoding       String             @default("auto")
+  /// { csvHeader: systemField } のマッピング
+  columnMappings Json
+  /// 重複判定の設定（優先キー・自動更新可否）
+  dedupeStrategy Json?
+  /// 未指定列に適用する既定値
+  defaultValues  Json?
+  isActive       Boolean            @default(true)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  batches      ImportBatch[]
+
+  @@unique([organizationId, name])
+  @@map("csv_templates")
+}
+
+model ImportBatch {
+  id             String            @id @default(cuid())
+  organizationId String
+  agencyId       String?
+  templateId     String?
+  fileName       String
+  fileHash       String
+  fileSize       Int               @default(0)
+  encoding       String            @default("UTF-8")
+  targetEntity   ImportTargetEntity @default(CUSTOMER_CONTRACT)
+  columnMappings Json?
+  status         ImportBatchStatus @default(DRAFT)
+  totalRows      Int               @default(0)
+  successCount   Int               @default(0)
+  failureCount   Int               @default(0)
+  createdCount   Int               @default(0)
+  updatedCount   Int               @default(0)
+  duplicateCount Int               @default(0)
+  importedById   String?
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  rolledBackAt   DateTime?
+  errorSummary   String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  agency       Agency?      @relation(fields: [agencyId], references: [id], onDelete: SetNull)
+  template     CsvTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  importedBy   User?        @relation(fields: [importedById], references: [id], onDelete: SetNull)
+  rows         ImportRow[]
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, fileHash])
+  @@map("import_batches")
+}
+
+model ImportRow {
+  id         String          @id @default(cuid())
+  batchId    String
+  rowNumber  Int
+  raw        Json
+  normalized Json?
+  status     ImportRowStatus @default(PENDING)
+  errors     Json?
+  /// 重複判定に使われたキー（CONTRACT_NUMBER / EXTERNAL_ID / PHONE_NAME 等）
+  matchedBy  String?
+  customerId String?
+  contractId String?
+  /// この行が新規作成したレコードか（ロールバック判定に使う）
+  createdCustomer Boolean    @default(false)
+  createdContract Boolean    @default(false)
+  /// 更新前スナップショット（ロールバック用）
+  beforeSnapshot  Json?
+  createdAt  DateTime        @default(now())
+
+  batch ImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@unique([batchId, rowNumber])
+  @@index([batchId, status])
+  @@map("import_rows")
+}
+
+// ─────────────────────────────────────────────────────────────
+// 監査ログ
+// ─────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  organizationId String?
+  agencyId       String?
+  actorUserId    String?
+  actorRole      String?
+  action         String
+  entity         String
+  entityId       String?
+  before         Json?
+  after          Json?
+  ipAddress      String?
+  userAgent      String?
+  createdAt      DateTime @default(now())
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  actor        User?         @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([entity, entityId])
+  @@index([actorUserId, createdAt])
+  @@map("audit_logs")
+}
