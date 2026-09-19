@@ -31,6 +31,7 @@
 | [docs/11_MANAGEMENT_ACCOUNTING.md](docs/11_MANAGEMENT_ACCOUNTING.md) | 利益構造・催事別PL・ブース位置分析・原価配賦・会計連携 |
 | [docs/12_SECURITY.md](docs/12_SECURITY.md) | 脅威と対策・PII 取扱い・監査対象 |
 | [docs/13_PHASE1_AUDIT.md](docs/13_PHASE1_AUDIT.md) | **PHASE 1 総点検レポート**（検出した問題と是正内容） |
+| [docs/14_DEPLOYMENT.md](docs/14_DEPLOYMENT.md) | **デプロイ手順（Vercel + Neon）**・実際に起きたエラーと対処 |
 | [docs/KPI_DEFINITIONS.md](docs/KPI_DEFINITIONS.md) | **全 KPI の計算式（唯一の定義）** |
 | [ASSUMPTIONS.md](ASSUMPTIONS.md) | 仕様が未確定な箇所で置いた仮定 |
 
@@ -102,10 +103,38 @@ npm run build       # prisma generate + next build
 npm run lint        # ESLint
 npm run typecheck   # tsc --noEmit
 npm test            # Vitest（単体 + 統合）
-npm run db:migrate  # マイグレーション作成/適用
-npm run db:seed     # シード投入
-npm run db:reset    # DB リセット + 再シード
-npm run preflight   # 本番投入前チェック（開発用の資格情報が残っていないか）
+npm run db:migrate    # マイグレーション作成/適用
+npm run db:deploy     # マイグレーション適用のみ（本番向け）
+npm run db:bootstrap  # 本番初期化（マスタ + 最初の管理者。デモデータは作らない）
+npm run db:seed       # デモデータ投入（開発専用。本番では自動的に中止される）
+npm run db:reset      # DB リセット + 再シード
+npm run preflight     # 本番投入前チェック（開発用の資格情報が残っていないか）
+```
+
+### Vercel へのデプロイ
+
+手順・必要な環境変数・実際に起きたエラーと対処は
+**[docs/14_DEPLOYMENT.md](docs/14_DEPLOYMENT.md)** に集約している。要点のみ:
+
+```bash
+# 1. マイグレーションを本番 DB へ適用（Vercel のビルドでは実行されない）
+DATABASE_URL="<本番URL>" npx prisma migrate deploy
+
+# 2. マスタ + 最初の管理者を作成（デモデータは作らない）
+DATABASE_URL="<本番URL>" ADMIN_EMAIL="admin@your-company.co.jp" npm run db:bootstrap
+
+# 3. 本番投入前チェック
+npm run preflight
+```
+
+Vercel に設定する環境変数: `DATABASE_URL`（**プーラー経由** + `sslmode=require`）/
+`BETTER_AUTH_SECRET` / `BETTER_AUTH_URL`。
+
+ビルドが Vercel と同条件で通るかはローカルで検証できる:
+
+```bash
+git clone <repo> /tmp/verify && cd /tmp/verify && npm ci
+env -u DATABASE_URL -u BETTER_AUTH_SECRET npm run build
 ```
 
 ### 本番投入前に必ず実行すること

@@ -2,6 +2,7 @@ import { betterAuth } from 'better-auth';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
 import { nextCookies } from 'better-auth/next-js';
 import { prisma } from '@/server/db';
+import { resolveBaseUrl, resolveTrustedOrigins } from './base-url';
 
 /**
  * 認証基盤。
@@ -11,7 +12,9 @@ import { prisma } from '@/server/db';
 export const auth = betterAuth({
   database: prismaAdapter(prisma, { provider: 'postgresql' }),
   secret: process.env.BETTER_AUTH_SECRET,
-  baseURL: process.env.BETTER_AUTH_URL ?? 'http://localhost:3000',
+  // Vercel では BETTER_AUTH_URL 未設定でも VERCEL_URL から解決する（base-url.ts 参照）
+  baseURL: resolveBaseUrl(),
+  trustedOrigins: resolveTrustedOrigins(),
   emailAndPassword: {
     enabled: true,
     minPasswordLength: 8,

@@ -1,9 +1,16 @@
-import { prisma } from './client.js';
+import { prisma as defaultPrisma } from './client.js';
+import type { PrismaClient } from '../../src/generated/prisma/index.js';
 
 export const ORG_CODE = 'VIRTUE';
 
-/** マスタ投入。単価はここではなく pricing_rules / agency_unit_prices に入れる。 */
-export async function seedMasters() {
+/**
+ * マスタ投入。単価はここではなく pricing_rules / agency_unit_prices に入れる。
+ *
+ * デモデータを含まないため**本番環境でも安全に実行できる**
+ * （`scripts/bootstrap.ts` から呼ばれる）。
+ * 接続先を差し替えられるよう PrismaClient を引数で受け取る。
+ */
+export async function seedMasters(prisma: PrismaClient = defaultPrisma) {
   const organization = await prisma.organization.upsert({
     where: { code: ORG_CODE },
     update: {},

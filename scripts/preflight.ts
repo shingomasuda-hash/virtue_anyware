@@ -65,6 +65,17 @@ async function main() {
   // ── DB 上のアカウント ──
   const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: databaseUrl }) });
   try {
+    // 接続できない場合はスタックトレースではなく原因を短く示す
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      add('データベースへ接続できる', 'error', true, 'OK');
+    } catch (error) {
+      const message = error instanceof Error ? error.message.split('\n')[0] : String(error);
+      add('データベースへ接続できる', 'error', false, `接続に失敗しました: ${message}`);
+      report();
+      return;
+    }
+
     const users = await prisma.user.findMany({ select: { id: true, email: true, isActive: true, role: true } });
 
     const demoUsers = users.filter((u) =>
@@ -150,7 +161,7 @@ function report() {
   console.log('✅ 本番投入前チェックを通過しました。');
 }
 
-main().catch((error) => {
-  console.error('チェックの実行に失敗しました', error);
+main().catch((error: unknown) => {
+  console.error('チェックの実行に失敗しました:', error instanceof Error ? error.message : error);
   process.exitCode = 1;
 });
