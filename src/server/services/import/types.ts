@@ -32,6 +32,11 @@ export interface PlannedRow {
     productId: string | null;
     staffId: string | null;
     eventId: string | null;
+    /** 使用量ベース算定の入力（検針月は未指定なら契約日の月で補完） */
+    usageMonth: number | null;
+    actualUsageKwh: number | null;
+    hasStatement: boolean;
+    isMatchingConfirmed: boolean;
   };
 }
 

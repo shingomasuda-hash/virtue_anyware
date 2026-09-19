@@ -17,6 +17,11 @@ export interface ValidationContext {
   statusRawValue: string | null;
   /** マスタから解決した単価。CSV の単価と突き合わせる。 */
   masterUnitPrice: number | null;
+  /**
+   * 数量（W もしくは使用量）が必須か。
+   * 明細なしの定額手数料だけで成立する商流では false にする。
+   */
+  requiresQuantity: boolean;
 }
 
 const PHONE_PATTERN = /^0\d{9,10}$/;
@@ -55,16 +60,51 @@ export function validateRow(
     issues.push({ level: 'error', field: 'phone', message: '契約番号・顧客ID・電話番号がすべて空のため突合できません。' });
   }
 
-  // ── ワット数 ──
+  // ── 数量の基準（ワット数 または 使用量）──
+  // 商流によって課金の基準が異なるため、どちらか一方があればよい。
+  //   ・円/W 方式        → 契約ワット数
+  //   ・階段表方式        → 明細の使用量(kWh)
+  //   ・明細なしの定額方式 → どちらも不要
   const watt = values.contractWatt;
-  if (watt === null || watt === undefined) {
-    issues.push({ level: 'error', field: 'contractWatt', message: '契約ワット数が空です。' });
-  } else if (typeof watt !== 'number') {
+  const usage = values.actualUsageKwh;
+  const hasWatt = typeof watt === 'number' && watt > 0;
+  const hasUsage = typeof usage === 'number' && usage > 0;
+
+  if (watt !== null && watt !== undefined && typeof watt !== 'number') {
     issues.push({ level: 'error', field: 'contractWatt', message: '契約ワット数が数値ではありません。' });
-  } else if (watt <= 0) {
-    issues.push({ level: 'error', field: 'contractWatt', message: `契約ワット数が 0 以下です: ${watt}` });
-  } else if (watt > 1_000_000) {
+  } else if (typeof watt === 'number' && watt < 0) {
+    issues.push({ level: 'error', field: 'contractWatt', message: `契約ワット数が負です: ${watt}` });
+  } else if (typeof watt === 'number' && watt > 1_000_000) {
     issues.push({ level: 'warning', field: 'contractWatt', message: `契約ワット数が異常に大きい値です: ${watt}` });
+  }
+
+  if (usage !== null && usage !== undefined && typeof usage !== 'number') {
+    issues.push({ level: 'error', field: 'actualUsageKwh', message: '使用量(kWh)が数値ではありません。' });
+  } else if (typeof usage === 'number' && usage < 0) {
+    issues.push({ level: 'error', field: 'actualUsageKwh', message: `使用量(kWh)が負です: ${usage}` });
+  } else if (typeof usage === 'number' && usage > 100_000) {
+    issues.push({ level: 'warning', field: 'actualUsageKwh', message: `使用量(kWh)が異常に大きい値です: ${usage}` });
+  }
+
+  if (!hasWatt && !hasUsage && ctx.requiresQuantity) {
+    issues.push({
+      level: 'error',
+      field: 'contractWatt',
+      message: '契約ワット数と使用量(kWh)がどちらも空です。手数料を算定できません。',
+    });
+  }
+
+  // ── 検針月 ──
+  const usageMonth = values.usageMonth;
+  if (typeof usageMonth === 'number' && (usageMonth < 1 || usageMonth > 12 || !Number.isInteger(usageMonth))) {
+    issues.push({ level: 'error', field: 'usageMonth', message: `検針月が 1〜12 の範囲外です: ${usageMonth}` });
+  }
+  if (hasUsage && usageMonth === null) {
+    issues.push({
+      level: 'warning',
+      field: 'usageMonth',
+      message: '検針月が空のため、契約日の月の季節係数を適用します。',
+    });
   }
 
   // ── 契約日 ──

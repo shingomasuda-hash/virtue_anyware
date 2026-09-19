@@ -18,6 +18,14 @@ export interface ContractWriteInput {
   planId?: string | null;
   contractWatt: number;
   baseAmount?: number | null;
+  /** 電気料金明細の実使用量(kWh)。階段表方式の算定に使う */
+  actualUsageKwh?: number | null;
+  /** 明細の検針月(1-12) */
+  usageMonth?: number | null;
+  /** 明細の提出有無。無い場合は定額手数料になる */
+  hasStatement?: boolean;
+  /** マッチング確認案件（業務管理費を相殺する） */
+  isMatchingConfirmed?: boolean;
   statusId: string;
   appliedAt?: Date | null;
   contractedAt?: Date | null;
@@ -108,6 +116,10 @@ export async function createContract(
     quantity: input.contractWatt,
     baseAmount: input.baseAmount,
     basisDate,
+    actualUsageKwh: input.actualUsageKwh,
+    usageMonth: input.usageMonth,
+    hasStatement: input.hasStatement,
+    isMatchingConfirmed: input.isMatchingConfirmed,
   });
 
   const contract = await db.contract.create({
@@ -132,6 +144,18 @@ export async function createContract(
       campaign: input.campaign?.trim() || null,
       notes: input.notes?.trim() || null,
       createdByBatchId: options.batchId ?? null,
+      // 使用量ベース算定の入力と結果
+      actualUsageKwh:
+        input.actualUsageKwh === null || input.actualUsageKwh === undefined
+          ? null
+          : new Prisma.Decimal(input.actualUsageKwh),
+      usageMonth: input.usageMonth ?? null,
+      hasStatement: input.hasStatement ?? true,
+      isMatchingConfirmed: input.isMatchingConfirmed ?? false,
+      seasonalCoefficient:
+        priced.usage.coefficient === null ? null : new Prisma.Decimal(priced.usage.coefficient),
+      estimatedUsageKwh:
+        priced.usage.estimatedUsageKwh === null ? null : new Prisma.Decimal(priced.usage.estimatedUsageKwh),
       // 単価スナップショット
       hqUnitPrice: new Prisma.Decimal(priced.hqUnitPrice),
       agencyUnitPrice: new Prisma.Decimal(priced.agencyUnitPrice),
@@ -159,6 +183,16 @@ export async function createContract(
       grossMargin: new Prisma.Decimal(priced.grossMargin),
       hqPricingRuleId: priced.hqPricingRuleId,
       agencyPriceId: priced.agencyPriceId,
+      actualUsageKwh:
+        priced.usage.actualUsageKwh === null ? null : new Prisma.Decimal(priced.usage.actualUsageKwh),
+      usageMonth: priced.usage.usageMonth,
+      seasonalCoefficient:
+        priced.usage.coefficient === null ? null : new Prisma.Decimal(priced.usage.coefficient),
+      estimatedUsageKwh:
+        priced.usage.estimatedUsageKwh === null ? null : new Prisma.Decimal(priced.usage.estimatedUsageKwh),
+      hqTierId: priced.hqTierId,
+      agencyTierId: priced.agencyTierId,
+      deductionAmount: new Prisma.Decimal(priced.deduction),
       createdById: ctx.userId,
     },
   });
@@ -212,11 +246,27 @@ export async function updateContract(
   const appliedAt = input.appliedAt === undefined ? before.appliedAt : input.appliedAt;
   const productId = input.productId ?? before.productId;
 
+  const actualUsageKwh =
+    input.actualUsageKwh === undefined
+      ? before.actualUsageKwh === null
+        ? null
+        : toNumber(before.actualUsageKwh)
+      : input.actualUsageKwh;
+  const usageMonth = input.usageMonth === undefined ? before.usageMonth : input.usageMonth;
+  const hasStatement = input.hasStatement === undefined ? before.hasStatement : input.hasStatement;
+  const isMatchingConfirmed =
+    input.isMatchingConfirmed === undefined ? before.isMatchingConfirmed : input.isMatchingConfirmed;
+
   const repricingNeeded =
     contractWatt !== toNumber(before.contractWatt) ||
     contractedAt?.getTime() !== before.contractedAt?.getTime() ||
     agencyId !== before.agencyId ||
-    productId !== before.productId;
+    productId !== before.productId ||
+    // 使用量ベースの算定要素が変われば再計算する
+    actualUsageKwh !== (before.actualUsageKwh === null ? null : toNumber(before.actualUsageKwh)) ||
+    usageMonth !== before.usageMonth ||
+    hasStatement !== before.hasStatement ||
+    isMatchingConfirmed !== before.isMatchingConfirmed;
 
   await db.contract.update({
     where: { id },
@@ -237,6 +287,15 @@ export async function updateContract(
       staffId: input.staffId === undefined ? undefined : (input.staffId || null),
       campaign: input.campaign === undefined ? undefined : (input.campaign?.trim() || null),
       notes: input.notes === undefined ? undefined : (input.notes?.trim() || null),
+      actualUsageKwh:
+        input.actualUsageKwh === undefined
+          ? undefined
+          : input.actualUsageKwh === null
+            ? null
+            : new Prisma.Decimal(input.actualUsageKwh),
+      usageMonth: input.usageMonth === undefined ? undefined : input.usageMonth,
+      hasStatement: input.hasStatement === undefined ? undefined : input.hasStatement,
+      isMatchingConfirmed: input.isMatchingConfirmed === undefined ? undefined : input.isMatchingConfirmed,
     },
   });
 
@@ -250,6 +309,10 @@ export async function updateContract(
       quantity: contractWatt,
       baseAmount: input.baseAmount ?? (before.baseAmount === null ? null : toNumber(before.baseAmount)),
       basisDate: resolveBasisDate({ contractedAt, appliedAt }),
+      actualUsageKwh,
+      usageMonth,
+      hasStatement,
+      isMatchingConfirmed,
     });
     await applyPricingSnapshot(db, id, priced, {
       reason: options.batchId ? 'csv-import:reprice' : 'contract-updated',
@@ -344,6 +407,10 @@ export async function repriceContract(ctx: AccessContext, id: string, reason: st
     quantity: toNumber(before.contractWatt),
     baseAmount: before.baseAmount === null ? null : toNumber(before.baseAmount),
     basisDate: resolveBasisDate(before),
+    actualUsageKwh: before.actualUsageKwh === null ? null : toNumber(before.actualUsageKwh),
+    usageMonth: before.usageMonth,
+    hasStatement: before.hasStatement,
+    isMatchingConfirmed: before.isMatchingConfirmed,
   });
 
   await applyPricingSnapshot(prisma, id, priced, { reason, actorUserId: ctx.userId });

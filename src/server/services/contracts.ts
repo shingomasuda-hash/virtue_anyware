@@ -2,6 +2,8 @@ import type { AccessContext } from '@/server/authz/context';
 import { canViewHqFinancials } from '@/server/authz/context';
 import { toNumber } from '@/lib/money';
 import { findContractById, listContracts, type ContractListFilter } from '@/server/repositories/contract.repo';
+import { prisma } from '@/server/db';
+import { evaluateClawbackRisk } from '@/server/services/pricing/clawback';
 
 /** 代理店にも返してよい契約情報。 */
 export interface ContractBaseDto {
@@ -91,8 +93,46 @@ export async function getContractDetail(ctx: AccessContext, id: string) {
   if (!row) return null;
 
   const showHq = canViewHqFinancials(ctx);
+
+  // 手数料の算定根拠（階段表の該当行 / 上乗せ率）を最新スナップショットから引く
+  const latestSnapshot = row.pricingSnapshots[0] ?? null;
+  const [tier, markupRule] = await Promise.all([
+    latestSnapshot?.agencyTierId
+      ? prisma.pricingTier.findUnique({ where: { id: latestSnapshot.agencyTierId } })
+      : Promise.resolve(null),
+    showHq && latestSnapshot?.hqPricingRuleId
+      ? prisma.pricingRule.findUnique({ where: { id: latestSnapshot.hqPricingRuleId } })
+      : Promise.resolve(null),
+  ]);
+
+  const clawbackRisks = evaluateClawbackRisk({
+    appliedAt: row.appliedAt,
+    activatedAt: row.activatedAt,
+    cancelledAt: row.cancelledAt,
+    isCancelled: row.status.isCancelled,
+  });
+
   return {
     contract: row,
+    clawbackRisks,
+    breakdown: {
+      actualUsageKwh: row.actualUsageKwh === null ? null : toNumber(row.actualUsageKwh),
+      usageMonth: row.usageMonth,
+      seasonalCoefficient: row.seasonalCoefficient === null ? null : toNumber(row.seasonalCoefficient),
+      estimatedUsageKwh: row.estimatedUsageKwh === null ? null : toNumber(row.estimatedUsageKwh),
+      hasStatement: row.hasStatement,
+      isMatchingConfirmed: row.isMatchingConfirmed,
+      agencyUnitType: latestSnapshot?.agencyUnitType ?? null,
+      tier: tier
+        ? {
+            minValue: toNumber(tier.minValue),
+            maxValue: tier.maxValue === null ? null : toNumber(tier.maxValue),
+            amount: toNumber(tier.amount),
+          }
+        : null,
+      deduction: latestSnapshot ? toNumber(latestSnapshot.deductionAmount) : 0,
+      markupRate: markupRule?.rate === null || markupRule?.rate === undefined ? null : toNumber(markupRule.rate),
+    },
     amounts: {
       agencyUnitPrice: toNumber(row.agencyUnitPrice),
       agencyPayout: toNumber(row.agencyPayout),

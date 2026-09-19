@@ -139,14 +139,41 @@ npm run preflight
 ## 4. 収益構造
 
 ```
-hq_revenue      = 契約数量 × 本部受取単価        … VIRTUE売上
-agency_payout   = 契約数量 × 代理店支払単価      … 代理店への支払
-hq_gross_profit = hq_revenue - agency_payout    … VIRTUE粗利
-gross_margin    = hq_gross_profit / hq_revenue  … 粗利率
+hq_revenue      = f(算定方式, 数量, 本部受取単価)   … VIRTUE売上
+agency_payout   = f(算定方式, 数量, 代理店支払単価) … 代理店への支払
+hq_gross_profit = hq_revenue - agency_payout      … VIRTUE粗利
+gross_margin    = hq_gross_profit / hq_revenue    … 粗利率
 ```
 
-例: 5,000W × 本部150円/W = **750,000円**、× 代理店100円/W = **500,000円** →
-粗利 **250,000円**（粗利率 **33.3%**）。
+算定方式は単価マスタで切り替わる。現在 5 方式に対応している。
+
+| 方式 | 計算 | 用途 |
+| --- | --- | --- |
+| `PER_WATT` | 数量 × 円/W | 従来の W 課金商流 |
+| `PER_CONTRACT` | 件数 × 定額 | 通信・ウォーターサーバー等 |
+| `PERCENT_OF_AMOUNT` | 販売額 × 率 | 太陽光紹介料 |
+| `FIXED` | 定額 | 明細なしの場合の手数料など |
+| **`TIERED_BY_USAGE`** | 想定使用量(kWh)の階段表 | **エバーグリーン MPプラン（現行の主商流）** |
+| **`MARKUP_ON_PAYOUT`** | 代理店手数料 × (1 + 率) | **代理店fee + 10% = VIRTUE 受取** |
+
+### 現行の主商流（エバーグリーン MPプラン）
+
+```
+明細の使用量 → × 季節係数[検針月] → 想定使用量 → 対照表（30段）
+  → 代理店手数料 → − 業務管理費 → 代理店支払額
+  → 手数料 × 1.10 → VIRTUE受取 → 粗利
+```
+
+例: 6月検針 500kWh → 係数 116.4% → 想定 582kWh → 「550以上600未満」→
+代理店 **45,900円** → VIRTUE **50,490円** → 粗利 **4,590円**（9.09%）。
+
+**同じ 500kWh でも 8月検針なら 433.5kWh → 32,400円** と大きく変わる。
+算定根拠は契約詳細画面で段階表示され、契約行にスナップショット保存される。
+
+条件表の「戻入条件」も追跡する（供給開始遅延 3か月 / 短期解約 6か月 / 資料不正）。
+期限内の案件は「リスク保有」として、粗利が未確定であることを明示する。
+
+詳細は [docs/08_REVENUE_MODEL.md](docs/08_REVENUE_MODEL.md) の 8.9–8.13。
 
 ### 3つの設計上の約束
 
@@ -204,6 +231,11 @@ npm test
 | 同一CSV再アップロード → 重複登録されない | `tests/unit/dedupe.test.ts` |
 | キャンセル契約 → 有効売上・支払集計から除外される | `tests/unit/kpi.test.ts` / `tests/integration/isolation.test.ts` |
 | 5,000W / 150円 / 100円 → 750,000 / 500,000 / 250,000 | `tests/unit/pricing.test.ts` |
+| 階段表の境界（以上・未満）・上限なし・隙間/重複検出 | `tests/unit/tiered-pricing.test.ts` |
+| 季節係数で検針月ごとに手数料が変わる | `tests/unit/tiered-pricing.test.ts` |
+| 代理店fee + 10% / 明細なし定額 / 業務管理費の相殺 | `tests/unit/tiered-pricing.test.ts` |
+| 戻入 3 条件の期限判定（月跨ぎ・年跨ぎ・うるう年） | `tests/unit/clawback.test.ts` |
+| 実条件表を DB へ投入した上での算定（12 件） | `tests/integration/evergreen-pricing.test.ts` |
 | Shift-JIS CSV の読み込み・列マッピング推測・値正規化 | `tests/unit/csv.test.ts` |
 | 顧客登録・契約登録・代理店紐付け（代理店の入力を信用しない） | `tests/integration/write-paths.test.ts` |
 | 監査ログに変更前後が記録される | `tests/integration/write-paths.test.ts` |

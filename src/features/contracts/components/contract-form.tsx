@@ -23,6 +23,10 @@ export interface ContractFormDefaults {
   supplierId?: string | null;
   planId?: string | null;
   contractWatt?: string;
+  actualUsageKwh?: string;
+  usageMonth?: string;
+  hasStatement?: boolean;
+  isMatchingConfirmed?: boolean;
   statusId?: string;
   appliedAt?: string | null;
   contractedAt?: string | null;
@@ -125,9 +129,23 @@ export function ContractForm({
                 ))}
               </Select>
             </Field>
-            <Field label="契約ワット数 *" hint="半角数字。カンマは自動で除去されます。">
+            <Field label="契約ワット数" hint="W課金の商流で使用。使用量ベースの場合は 0 のままで構いません。">
               <Input name="contractWatt" required inputMode="numeric" defaultValue={defaults.contractWatt ?? '0'} />
               <FieldError state={state} name="contractWatt" />
+            </Field>
+
+            <Field label="明細の使用量(kWh)" hint="階段表方式の商流で使用します">
+              <Input name="actualUsageKwh" inputMode="decimal" defaultValue={defaults.actualUsageKwh ?? ''} />
+              <FieldError state={state} name="actualUsageKwh" />
+            </Field>
+            <Field label="検針月" hint="空欄なら契約日の月を使用">
+              <Select name="usageMonth" defaultValue={defaults.usageMonth ?? ''}>
+                <option value="">未設定</option>
+                {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                  <option key={m} value={String(m)}>{m}月</option>
+                ))}
+              </Select>
+              <FieldError state={state} name="usageMonth" />
             </Field>
 
             <Field label="申込日">
@@ -168,6 +186,19 @@ export function ContractForm({
             </Field>
             <Field label="キャンペーン">
               <Input name="campaign" defaultValue={defaults.campaign ?? ''} />
+            </Field>
+
+            <Field label="電気料金明細" hint="提出がない場合は定額手数料になります">
+              <label className="flex h-8 items-center gap-2 text-[13px]">
+                <input type="checkbox" name="hasStatement" defaultChecked={defaults.hasStatement ?? true} />
+                明細の提出あり
+              </label>
+            </Field>
+            <Field label="マッチング確認" hint="業務管理費が手数料と相殺されます">
+              <label className="flex h-8 items-center gap-2 text-[13px]">
+                <input type="checkbox" name="isMatchingConfirmed" defaultChecked={defaults.isMatchingConfirmed ?? false} />
+                マッチング確認案件
+              </label>
             </Field>
           </div>
 

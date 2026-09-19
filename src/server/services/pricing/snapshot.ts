@@ -1,7 +1,9 @@
 import { Prisma, type PrismaClient } from '@/generated/prisma';
-import { toNumber } from '@/lib/money';
+import { prisma } from '@/server/db';
 import { calcContractAmounts, type ContractAmounts, type ResolvedPrice } from './calc';
 import { resolveAgencyPayoutPrice, resolveHqReceivePrice, type PriceLookup } from './resolve';
+import { calcEstimatedUsage, type EstimatedUsage, type SeasonalCoefficientMap } from './usage';
+import { loadSeasonalCoefficients, loadFeePolicy } from './masters';
 
 export type PrismaLike = PrismaClient | Prisma.TransactionClient;
 
@@ -15,6 +17,16 @@ export interface PriceContractInput {
   baseAmount?: number | null;
   /** 適用基準日。契約日 → 申込日 → 今日 の優先で決める。 */
   basisDate: Date;
+
+  // ── 使用量ベース算定（階段表を使う商流）──
+  /** 電気料金明細に記載された実使用量(kWh) */
+  actualUsageKwh?: number | null;
+  /** 明細の検針月(1-12) */
+  usageMonth?: number | null;
+  /** 電気料金明細の提出有無。無い場合は定額手数料になる */
+  hasStatement?: boolean;
+  /** マッチング確認案件（業務管理費を手数料と相殺する） */
+  isMatchingConfirmed?: boolean;
 }
 
 export interface PricedContract extends ContractAmounts {
@@ -22,11 +34,25 @@ export interface PricedContract extends ContractAmounts {
   quantity: number;
   hqPricingRuleId: string | null;
   agencyPriceId: string | null;
+  usage: EstimatedUsage;
+  /** 明細なしのため定額手数料を適用した */
+  appliedNoStatementFee: boolean;
 }
 
 const ZERO_PRICE: ResolvedPrice = { unitType: 'PER_WATT', unitPrice: 0, rate: null, sourceId: null };
 
-/** 単価マスタを引いて契約金額を算出する（DB 書き込みは行わない）。 */
+/**
+ * 単価マスタを引いて契約金額を算出する（DB 書き込みは行わない）。
+ *
+ * 使用量ベースの商流（エバーグリーン MPプラン等）では次の順で計算する。
+ *
+ *   1. 明細の実使用量 × 季節係数[検針月] = 想定使用量(kWh)
+ *   2. 想定使用量で階段表を引く            = 代理店への成約事務手数料
+ *   3. 業務管理費などを控除                = 代理店支払額
+ *   4. 手数料に上乗せ率を適用              = 本部受取額
+ *
+ * 従来の 円/W 商流では 1・2 が素通りし、これまでどおり quantity × unitPrice になる。
+ */
 export async function priceContract(input: PriceContractInput): Promise<PricedContract> {
   const lookup: PriceLookup = {
     organizationId: input.organizationId,
@@ -37,16 +63,38 @@ export async function priceContract(input: PriceContractInput): Promise<PricedCo
     basisDate: input.basisDate,
   };
 
-  const [hq, agency] = await Promise.all([
+  const [hq, agency, coefficients, policy] = await Promise.all([
     resolveHqReceivePrice(lookup),
     resolveAgencyPayoutPrice(lookup),
+    loadSeasonalCoefficients(input.organizationId, input.supplierId ?? null, input.basisDate),
+    loadFeePolicy(input.organizationId, input.supplierId ?? null, input.basisDate),
   ]);
+
+  const usage = calcEstimatedUsage({
+    actualUsageKwh: input.actualUsageKwh,
+    usageMonth: input.usageMonth,
+    coefficients: coefficients as SeasonalCoefficientMap,
+  });
+
+  const usesTier = agency?.unitType === 'TIERED_BY_USAGE' || hq?.unitType === 'TIERED_BY_USAGE';
+  const hasStatement = input.hasStatement ?? true;
+
+  // 明細の写真が無い場合は階段表ではなく定額手数料を適用する（条件表の但し書き）
+  const appliedNoStatementFee = usesTier && !hasStatement && policy.noStatementFee > 0;
+  const effectiveAgency: ResolvedPrice | null = appliedNoStatementFee
+    ? { unitType: 'FIXED', unitPrice: policy.noStatementFee, rate: null, sourceId: agency?.sourceId ?? null }
+    : agency;
+
+  // マッチング確認案件は業務管理費を手数料と相殺する
+  const deduction = usesTier && input.isMatchingConfirmed ? policy.managementFee : 0;
 
   const amounts = calcContractAmounts({
     quantity: input.quantity,
     baseAmount: input.baseAmount ?? undefined,
+    estimatedUsage: usage.estimatedUsageKwh,
+    deduction,
     hq: hq ?? ZERO_PRICE,
-    agency,
+    agency: effectiveAgency,
   });
 
   return {
@@ -55,6 +103,8 @@ export async function priceContract(input: PriceContractInput): Promise<PricedCo
     quantity: input.quantity,
     hqPricingRuleId: hq?.sourceId ?? null,
     agencyPriceId: agency?.sourceId ?? null,
+    usage,
+    appliedNoStatementFee,
   };
 }
 
@@ -79,6 +129,10 @@ export async function applyPricingSnapshot(
       agencyPayout: new Prisma.Decimal(priced.agencyPayout),
       hqGrossProfit: new Prisma.Decimal(priced.hqGrossProfit),
       grossMargin: new Prisma.Decimal(priced.grossMargin),
+      seasonalCoefficient:
+        priced.usage.coefficient === null ? null : new Prisma.Decimal(priced.usage.coefficient),
+      estimatedUsageKwh:
+        priced.usage.estimatedUsageKwh === null ? null : new Prisma.Decimal(priced.usage.estimatedUsageKwh),
       pricedAt: new Date(),
     },
   });
@@ -99,28 +153,19 @@ export async function applyPricingSnapshot(
       grossMargin: new Prisma.Decimal(priced.grossMargin),
       hqPricingRuleId: priced.hqPricingRuleId,
       agencyPriceId: priced.agencyPriceId,
+      actualUsageKwh:
+        priced.usage.actualUsageKwh === null ? null : new Prisma.Decimal(priced.usage.actualUsageKwh),
+      usageMonth: priced.usage.usageMonth,
+      seasonalCoefficient:
+        priced.usage.coefficient === null ? null : new Prisma.Decimal(priced.usage.coefficient),
+      estimatedUsageKwh:
+        priced.usage.estimatedUsageKwh === null ? null : new Prisma.Decimal(priced.usage.estimatedUsageKwh),
+      hqTierId: priced.hqTierId,
+      agencyTierId: priced.agencyTierId,
+      deductionAmount: new Prisma.Decimal(priced.deduction),
       createdById: options.actorUserId ?? null,
     },
   });
 }
 
-/** 契約行に保存済みのスナップショット値を数値へ展開する（集計用）。 */
-export function readSnapshot(contract: {
-  hqUnitPrice: unknown;
-  agencyUnitPrice: unknown;
-  hqRevenue: unknown;
-  agencyPayout: unknown;
-  hqGrossProfit: unknown;
-  grossMargin: unknown;
-}): ContractAmounts {
-  return {
-    hqUnitPrice: toNumber(contract.hqUnitPrice as never),
-    agencyUnitPrice: toNumber(contract.agencyUnitPrice as never),
-    hqRevenue: toNumber(contract.hqRevenue as never),
-    agencyPayout: toNumber(contract.agencyPayout as never),
-    hqGrossProfit: toNumber(contract.hqGrossProfit as never),
-    grossMargin: toNumber(contract.grossMargin as never),
-    hqUnitType: 'PER_WATT',
-    agencyUnitType: 'PER_WATT',
-  };
-}
+export { prisma };

@@ -56,6 +56,36 @@ enum PriceUnitType {
   PER_CONTRACT
   PERCENT_OF_AMOUNT
   FIXED
+  /// 想定使用量(kWh)の階段表から手数料を引く（エバーグリーン MPプラン等）
+  TIERED_BY_USAGE
+  /// 代理店支払額に率を上乗せして本部受取を導出する（例: 代理店fee + 10%）
+  MARKUP_ON_PAYOUT
+}
+
+/// 戻入（クローバック）の事由。
+enum ClawbackReason {
+  /// ① 供給開始に至らなかった
+  NO_SUPPLY_START
+  /// ② 短期解約・プラン変更
+  EARLY_TERMINATION
+  /// ③ 提出資料の不正・虚偽
+  FRAUDULENT_DOCUMENT
+  OTHER
+}
+
+enum ClawbackStatus {
+  /// 期限内。まだ戻入が確定していない（引当対象）
+  AT_RISK
+  /// 戻入が確定した
+  CONFIRMED
+  /// 翌月以降の手数料と相殺した
+  OFFSET
+  /// 相殺しきれず請求書を発行した
+  INVOICED
+  /// 返還完了
+  SETTLED
+  /// 期限を過ぎ、戻入リスクが消滅した
+  RELEASED
 }
 
 /// 単価の向き。本部が受け取る側か、代理店へ支払う側か。
@@ -278,6 +308,8 @@ model Organization {
   csvTemplates     CsvTemplate[]
   auditLogs        AuditLog[]
   costAllocations  CostAllocation[]
+  seasonalCoefficients SeasonalCoefficient[]
+  clawbacks        Clawback[]
 
   @@map("organizations")
 }
@@ -424,6 +456,7 @@ model Agency {
   expenses     Expense[]
   revenues     Revenue[]
   importBatches ImportBatch[]
+  clawbacks    Clawback[]
 
   @@unique([organizationId, code])
   @@index([organizationId, status])
@@ -498,6 +531,7 @@ model Supplier {
   plans        Plan[]
   contracts    Contract[]
   pricingRules PricingRule[]
+  seasonalCoefficients SeasonalCoefficient[]
 
   @@unique([organizationId, code])
   @@map("suppliers")
@@ -594,10 +628,87 @@ model PricingRule {
   supplier     Supplier?    @relation(fields: [supplierId], references: [id], onDelete: SetNull)
   plan         Plan?        @relation(fields: [planId], references: [id], onDelete: SetNull)
   createdBy    User?        @relation("PricingRuleCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  tiers        PricingTier[]
 
   @@index([organizationId, side, effectiveFrom])
   @@index([agencyId, side])
   @@map("pricing_rules")
+}
+
+/// 階段式手数料表の 1 行（例: 「500以上550未満 → 41,400円」）。
+/// 単価をコードに書かないための実体（§6）。条件表が改定されたら行を入れ替える。
+model PricingTier {
+  id            String   @id @default(cuid())
+  pricingRuleId String
+  /// 下限（以上）
+  minValue      Decimal  @db.Decimal(14, 2)
+  /// 上限（未満）。null は上限なし。
+  maxValue      Decimal? @db.Decimal(14, 2)
+  amount        Decimal  @db.Decimal(18, 2)
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  pricingRule PricingRule @relation(fields: [pricingRuleId], references: [id], onDelete: Cascade)
+
+  @@index([pricingRuleId, minValue])
+  @@map("pricing_tiers")
+}
+
+/// 季節係数（§条件表）。明細の使用量を平準化して想定使用量を求めるために使う。
+/// 例: 1月 86.9% → 1月検針の実使用量 × 0.869 = 想定使用量
+model SeasonalCoefficient {
+  id             String    @id @default(cuid())
+  organizationId String
+  supplierId     String?
+  productId      String?
+  /// 検針月（1-12）
+  month          Int
+  coefficient    Decimal   @db.Decimal(9, 6)
+  effectiveFrom  DateTime  @db.Date
+  effectiveTo    DateTime? @db.Date
+  note           String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  supplier     Supplier?    @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, month, effectiveFrom])
+  @@map("seasonal_coefficients")
+}
+
+/// 戻入（クローバック）。支払済み手数料の返還義務を追跡する。
+/// 期限内の案件は AT_RISK として粗利の引当に反映し、経営数値を過大に見せない。
+model Clawback {
+  id             String         @id @default(cuid())
+  organizationId String
+  contractId     String
+  agencyId       String?
+  reason         ClawbackReason
+  status         ClawbackStatus @default(AT_RISK)
+  /// 返還対象となる本部受取額
+  hqAmount       Decimal        @default(0) @db.Decimal(18, 2)
+  /// 代理店から回収する額
+  agencyAmount   Decimal        @default(0) @db.Decimal(18, 2)
+  /// この日までに条件を満たさなければ戻入が確定する
+  riskUntil      DateTime?      @db.Date
+  /// 返還期限
+  refundDueOn    DateTime?      @db.Date
+  detectedAt     DateTime       @default(now())
+  confirmedAt    DateTime?
+  settledAt      DateTime?
+  note           String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contract     Contract     @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  agency       Agency?      @relation(fields: [agencyId], references: [id], onDelete: SetNull)
+
+  @@unique([contractId, reason])
+  @@index([organizationId, status])
+  @@index([organizationId, riskUntil])
+  @@map("clawbacks")
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -666,6 +777,21 @@ model Contract {
   contractWatt   Decimal   @default(0) @db.Decimal(14, 2)
   /// 太陽光等で販売額ベース計算をする場合の基準額
   baseAmount     Decimal?  @db.Decimal(18, 2)
+
+  // ── 使用量ベースの手数料算定（エバーグリーン MPプラン等）──
+  /// 電気料金明細に記載された実使用量(kWh)
+  actualUsageKwh      Decimal? @db.Decimal(12, 2)
+  /// 明細の検針月(1-12)。季節係数の適用に使う
+  usageMonth          Int?
+  /// 適用した季節係数（スナップショット）
+  seasonalCoefficient Decimal? @db.Decimal(9, 6)
+  /// 想定使用量(kWh) = 実使用量 × 季節係数。階段表の参照キー（スナップショット）
+  estimatedUsageKwh   Decimal? @db.Decimal(12, 2)
+  /// 電気料金明細の提出有無。無い場合は定額手数料になる
+  hasStatement        Boolean  @default(true)
+  /// マッチング確認案件（業務管理費を手数料と相殺する）
+  isMatchingConfirmed Boolean  @default(false)
+
   statusId       String
   appliedAt      DateTime? @db.Date
   contractedAt   DateTime? @db.Date
@@ -710,6 +836,7 @@ model Contract {
   activities       CustomerActivity[]
   upsellLeads      UpsellLead[]      @relation("UpsellSourceContract")
   settlementItems  SettlementItem[]
+  clawbacks        Clawback[]
 
   @@unique([organizationId, contractNumber])
   @@index([organizationId, agencyId, contractedAt])
@@ -737,6 +864,16 @@ model ContractPricingSnapshot {
   grossMargin     Decimal       @db.Decimal(9, 6)
   hqPricingRuleId String?
   agencyPriceId   String?
+  /// 使用量ベース算定の根拠（階段表を使った場合）
+  actualUsageKwh      Decimal? @db.Decimal(12, 2)
+  usageMonth          Int?
+  seasonalCoefficient Decimal? @db.Decimal(9, 6)
+  estimatedUsageKwh   Decimal? @db.Decimal(12, 2)
+  /// 適用した階段表の行
+  hqTierId            String?
+  agencyTierId        String?
+  /// 控除額（業務管理費など）
+  deductionAmount     Decimal  @default(0) @db.Decimal(18, 2)
   calcVersion     String        @default("v1")
   createdById     String?
   createdAt       DateTime      @default(now())

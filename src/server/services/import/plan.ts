@@ -92,6 +92,20 @@ function toJsonValue(value: string | number | Date | null): string | number | nu
   return value;
 }
 
+const TRUTHY = new Set(['有', 'あり', '有り', '1', 'true', 'yes', 'y', '○', '◯', 'o', '済', '提出済']);
+const FALSY = new Set(['無', 'なし', '無し', '0', 'false', 'no', 'n', '×', 'x', '未', '未提出']);
+
+/** CSV の「有/無」「○/×」「1/0」などを真偽値へ正規化する。 */
+export function parseBooleanish(value: string | number | Date | null | undefined, fallback: boolean): boolean {
+  if (value === null || value === undefined || value === '') return fallback;
+  if (typeof value === 'number') return value !== 0;
+  if (value instanceof Date) return fallback;
+  const normalized = value.normalize('NFKC').trim().toLowerCase();
+  if (TRUTHY.has(normalized)) return true;
+  if (FALSY.has(normalized)) return false;
+  return fallback;
+}
+
 /**
  * 取込計画を立てる（DRY RUN の本体）。
  *
@@ -189,6 +203,15 @@ export async function planImport(ctx: AccessContext, batchId: string): Promise<I
     const appliedAt = values.appliedAt instanceof Date ? values.appliedAt : null;
     const basisDate = contractedAt ?? appliedAt ?? new Date();
 
+    // 検針月が空なら契約日の月を使う（明細の対象月として妥当な既定値）
+    const usageMonthRaw = typeof values.usageMonth === 'number' ? values.usageMonth : null;
+    const usageMonth =
+      usageMonthRaw !== null && usageMonthRaw >= 1 && usageMonthRaw <= 12
+        ? usageMonthRaw
+        : (contractedAt ?? appliedAt)?.getMonth() !== undefined
+          ? ((contractedAt ?? appliedAt) as Date).getMonth() + 1
+          : null;
+
     issues.push(
       ...validateRow(values, {
         agencyId,
@@ -197,6 +220,8 @@ export async function planImport(ctx: AccessContext, batchId: string): Promise<I
         statusId: status?.id ?? null,
         statusRawValue: statusRaw,
         masterUnitPrice: await masterUnitPrice(agencyId, basisDate),
+        // 明細の提出がない案件は定額手数料になるため、数量が無くても取り込める
+        requiresQuantity: parseBooleanish(values.hasStatement, true),
       }),
     );
 
@@ -273,6 +298,10 @@ export async function planImport(ctx: AccessContext, batchId: string): Promise<I
         productId: electricity?.id ?? null,
         staffId: staffRaw ? (staffLookup.get(normalizeHeader(staffRaw))?.id ?? null) : null,
         eventId: venueRaw ? (eventLookup.get(normalizeHeader(venueRaw))?.id ?? null) : null,
+        usageMonth,
+        actualUsageKwh: typeof values.actualUsageKwh === 'number' ? values.actualUsageKwh : null,
+        hasStatement: parseBooleanish(values.hasStatement, true),
+        isMatchingConfirmed: parseBooleanish(values.isMatchingConfirmed, false),
       },
     });
   }

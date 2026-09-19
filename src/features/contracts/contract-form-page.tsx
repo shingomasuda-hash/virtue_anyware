@@ -51,6 +51,10 @@ export async function ContractFormPage({
         supplierId: contract.supplierId,
         planId: contract.planId,
         contractWatt: String(toNumber(contract.contractWatt)),
+        actualUsageKwh: contract.actualUsageKwh === null ? '' : String(toNumber(contract.actualUsageKwh)),
+        usageMonth: contract.usageMonth === null ? '' : String(contract.usageMonth),
+        hasStatement: contract.hasStatement,
+        isMatchingConfirmed: contract.isMatchingConfirmed,
         statusId: contract.statusId,
         appliedAt: toDateInput(contract.appliedAt),
         contractedAt: toDateInput(contract.contractedAt),
@@ -65,6 +69,8 @@ export async function ContractFormPage({
         productId: options.products[0]?.id,
         statusId: options.statuses[0]?.id,
         contractWatt: '0',
+        hasStatement: true,
+        isMatchingConfirmed: false,
       };
 
   return (

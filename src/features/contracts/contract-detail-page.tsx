@@ -8,6 +8,8 @@ import { StatCard, StatGrid } from '@/components/data/stat-card';
 import { can, canViewHqFinancials, type AccessContext } from '@/server/authz/context';
 import { Button } from '@/components/ui/button';
 import { CancelContractForm, RepriceContractForm } from './components/contract-actions';
+import { FeeBreakdown } from './components/fee-breakdown';
+import { ClawbackPanel } from './components/clawback-panel';
 import { getContractDetail } from '@/server/services/contracts';
 import { formatDate, formatDateTime, formatNumber, formatPercent, formatWatt, formatYen } from '@/lib/format';
 import { toNumber } from '@/lib/money';
@@ -26,7 +28,7 @@ export async function ContractDetailPage({
   const detail = await getContractDetail(ctx, id);
   if (!detail) notFound();
 
-  const { contract, amounts } = detail;
+  const { contract, amounts, breakdown, clawbackRisks } = detail;
   const showHq = canViewHqFinancials(ctx);
   const canWrite = can(ctx, 'contract:write');
   const canReprice = canWrite && can(ctx, 'pricing:write');
@@ -56,13 +58,36 @@ export async function ContractDetailPage({
       ) : null}
 
       <StatGrid columns={showHq ? 6 : 3}>
-        <StatCard label="契約ワット数" value={formatWatt(toNumber(contract.contractWatt))} />
+        {breakdown.estimatedUsageKwh !== null ? (
+          <StatCard
+            label="想定使用量"
+            value={`${formatNumber(breakdown.estimatedUsageKwh)} kWh`}
+            sub={
+              breakdown.actualUsageKwh !== null
+                ? `明細 ${formatNumber(breakdown.actualUsageKwh)} kWh${breakdown.usageMonth ? ` (${breakdown.usageMonth}月検針)` : ''}`
+                : undefined
+            }
+          />
+        ) : (
+          <StatCard label="契約ワット数" value={formatWatt(toNumber(contract.contractWatt))} />
+        )}
         {showHq ? <StatCard label="本部単価" value={`${formatNumber(amounts.hqUnitPrice ?? 0)} 円/W`} /> : null}
         <StatCard label="代理店単価" value={`${formatNumber(amounts.agencyUnitPrice)} 円/W`} />
         {showHq ? <StatCard label="VIRTUE売上" value={formatYen(amounts.hqRevenue ?? 0)} /> : null}
         <StatCard label="代理店支払" value={formatYen(amounts.agencyPayout)} />
         {showHq ? <StatCard label="VIRTUE粗利" value={formatYen(amounts.hqGrossProfit ?? 0)} tone="positive" sub={`粗利率 ${formatPercent(amounts.grossMargin ?? 0)}`} /> : null}
       </StatGrid>
+
+      <div className="grid gap-5 xl:grid-cols-2">
+        <FeeBreakdown
+          {...breakdown}
+          agencyPayout={amounts.agencyPayout}
+          hqRevenue={showHq ? amounts.hqRevenue : undefined}
+          hqGrossProfit={showHq ? amounts.hqGrossProfit : undefined}
+          grossMargin={showHq ? amounts.grossMargin : undefined}
+        />
+        <ClawbackPanel risks={clawbackRisks} />
+      </div>
 
       <div className="grid gap-5 xl:grid-cols-2">
         <Panel>

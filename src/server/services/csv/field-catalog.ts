@@ -60,6 +60,18 @@ export const FIELD_CATALOG: readonly FieldDefinition[] = [
     ] },
   { key: 'unitPrice', label: '単価', type: 'number', target: 'contract',
     aliases: ['単価', '円/W', 'unitPrice', 'unit_price'] },
+  // ── 使用量ベースの手数料算定（エバーグリーン MPプラン等）──
+  { key: 'actualUsageKwh', label: '使用量(kWh)', type: 'number', target: 'contract',
+    aliases: [
+      '使用量', '使用量(kWh)', '実使用量', '電気使用量', '月間使用量', '検針使用量',
+      'kWh', 'usage', 'usageKwh', 'usage_kwh', 'actualUsageKwh',
+    ] },
+  { key: 'usageMonth', label: '検針月', type: 'number', target: 'contract',
+    aliases: ['検針月', '対象月', '明細月', '使用月', '請求月', 'usageMonth', 'usage_month', 'meterMonth'] },
+  { key: 'hasStatement', label: '明細提出', type: 'string', target: 'contract',
+    aliases: ['明細提出', '明細有無', '明細', '明細写真', '料金明細', 'hasStatement', 'statement'] },
+  { key: 'isMatchingConfirmed', label: 'マッチング確認', type: 'string', target: 'contract',
+    aliases: ['マッチング確認', 'マッチング', 'matching', 'isMatchingConfirmed'] },
   { key: 'agencyCode', label: '代理店', type: 'string', target: 'contract',
     aliases: ['代理店', '代理店名', '代理店コード', 'agency', 'agencyCode', 'agency_code'] },
   { key: 'staffName', label: '担当者', type: 'string', target: 'contract',

@@ -472,3 +472,61 @@ describe('権限', () => {
     }
   });
 });
+
+describe('階段表方式の CSV 取込（エバーグリーン MPプラン）', () => {
+  it('使用量・検針月・明細有無から手数料を算定して取り込む', async () => {
+    const { seedEvergreenConditions } = await import('../../prisma/seed/evergreen');
+    const seeded = await seedEvergreenConditions({
+      organizationId: ids.org,
+      productId: ids.product,
+      createdById: hq.userId,
+    });
+    // 代理店側の 円/W 単価があると階段表より優先されるため外す
+    await prisma.agencyUnitPrice.deleteMany({ where: { agencyId: { in: [ids.agencyA, ids.agencyB, ids.agencyC] } } });
+
+    const uploaded = await stage('evergreen-usage.csv');
+    const plan = await planImport(hq, uploaded.batchId);
+    expect(plan.summary.errorCount).toBe(0);
+    expect(plan.summary.createCount).toBe(5);
+
+    // 検針月・使用量・明細有無が解決されている
+    const first = plan.rows[0];
+    expect(first?.resolved.usageMonth).toBe(6);
+    expect(first?.resolved.actualUsageKwh).toBe(500);
+    expect(first?.resolved.hasStatement).toBe(true);
+    const noStatement = plan.rows.find((r) => r.values.contractNumber === 'EG-0004');
+    expect(noStatement?.resolved.hasStatement).toBe(false);
+    const matching = plan.rows.find((r) => r.values.contractNumber === 'EG-0003');
+    expect(matching?.resolved.isMatchingConfirmed).toBe(true);
+
+    await commitImport(hq, uploaded.batchId);
+
+    // 6月検針 500kWh → 582kWh → 45,900 円 / 本部 50,490 円
+    const eg1 = await prisma.contract.findFirstOrThrow({ where: { organizationId: ids.org, contractNumber: 'EG-0001' } });
+    expect(toNumber(eg1.estimatedUsageKwh ?? 0)).toBe(582);
+    expect(toNumber(eg1.agencyPayout)).toBe(45_900);
+    expect(toNumber(eg1.hqRevenue)).toBe(50_490);
+
+    // 同じ 500kWh でも 8月検針なら 433.5kWh → 32,400 円
+    const eg2 = await prisma.contract.findFirstOrThrow({ where: { organizationId: ids.org, contractNumber: 'EG-0002' } });
+    expect(toNumber(eg2.estimatedUsageKwh ?? 0)).toBe(433.5);
+    expect(toNumber(eg2.agencyPayout)).toBe(32_400);
+
+    // 明細なしは定額 3,600 円
+    const eg4 = await prisma.contract.findFirstOrThrow({ where: { organizationId: ids.org, contractNumber: 'EG-0004' } });
+    expect(eg4.hasStatement).toBe(false);
+    expect(toNumber(eg4.agencyPayout)).toBe(3_600);
+
+    // 50kWh 未満は 0 円
+    const eg5 = await prisma.contract.findFirstOrThrow({ where: { organizationId: ids.org, contractNumber: 'EG-0005' } });
+    expect(toNumber(eg5.agencyPayout)).toBe(0);
+
+    // マッチング確認案件は業務管理費 1,000 円が相殺される
+    const eg3 = await prisma.contract.findFirstOrThrow({ where: { organizationId: ids.org, contractNumber: 'EG-0003' } });
+    expect(eg3.isMatchingConfirmed).toBe(true);
+    expect(toNumber(eg3.agencyPayout)).toBe(116_900);
+    expect(toNumber(eg3.hqRevenue)).toBe(129_690);
+
+    expect(seeded.agencyRuleId).toBeTruthy();
+  });
+});

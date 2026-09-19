@@ -1,6 +1,7 @@
 import { prisma } from './client.js';
 import { seedMasters } from './masters.js';
 import { seedDemo } from './demo.js';
+import { seedEvergreenConditions } from './evergreen.js';
 import { DEMO_PASSWORD, DEMO_PASSWORD_GENERATED } from './users.js';
 import { assertSeedAllowed } from './guard.js';
 
@@ -13,6 +14,17 @@ async function main() {
 
   console.log('▶ デモデータを投入します…');
   const demo = await seedDemo(masters);
+
+  // demo は pricing_rules を作り直すため、条件表の投入は demo の後に行う
+  console.log('▶ エバーグリーン条件表を投入します…');
+  const admin = await prisma.user.findFirst({ where: { email: 'hq.admin@virtue.example.jp' } });
+  if (masters.products.ELEC) {
+    await seedEvergreenConditions({
+      organizationId: masters.organizationId,
+      productId: masters.products.ELEC,
+      createdById: admin?.id ?? null,
+    });
+  }
 
   const [customers, contracts, leads] = await Promise.all([
     prisma.customer.count(),
