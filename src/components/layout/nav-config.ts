@@ -60,7 +60,7 @@ export const HQ_NAV: NavSection[] = [
   {
     title: 'データ',
     items: [
-      { label: 'CSVインポート', href: '/import', permission: 'import:run', badge: 'P2' },
+      { label: 'CSVインポート', href: '/import', permission: 'import:run' },
       { label: 'レポート', href: '/reports', permission: 'report:read', badge: 'P9' },
     ],
   },

@@ -1545,6 +1545,9 @@ model ImportBatch {
   createdCount   Int               @default(0)
   updatedCount   Int               @default(0)
   duplicateCount Int               @default(0)
+  warningCount   Int               @default(0)
+  /// 取込オプション（未知代理店の扱い・既定ステータス等）
+  options        Json?
   importedById   String?
   startedAt      DateTime?
   finishedAt     DateTime?
@@ -1581,6 +1584,12 @@ model ImportRow {
   createdContract Boolean    @default(false)
   /// 更新前スナップショット（ロールバック用）
   beforeSnapshot  Json?
+  /// 取込直後の updatedAt。これと現在値が異なれば「取込後に人が変更した」と判断し、
+  /// ロールバック対象から除外する（他人の変更を巻き戻さないための安全装置）。
+  customerUpdatedAt DateTime?
+  contractUpdatedAt DateTime?
+  /// 行の警告（取込は成功するが確認が必要なもの）
+  warnings   Json?
   createdAt  DateTime        @default(now())
 
   batch ImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)

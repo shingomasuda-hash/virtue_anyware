@@ -43,6 +43,12 @@ describe('列マッピング推測（§7 STEP3）', () => {
     expect(suggestFieldKey('W数')).toBe('contractWatt');
   });
 
+  it('ワット数は KW / kW / 契約容量 などの表記でも同じ項目へ紐付く', () => {
+    for (const header of ['KW', 'kW', 'kw', 'ワット数', '契約容量', '容量', '契約電力', 'capacity']) {
+      expect(suggestFieldKey(header)).toBe('contractWatt');
+    }
+  });
+
   it('未知のヘッダは null（ユーザーが STEP3 で手動指定する）', () => {
     expect(suggestFieldKey('謎の列')).toBeNull();
   });

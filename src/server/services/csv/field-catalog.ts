@@ -53,7 +53,11 @@ export const FIELD_CATALOG: readonly FieldDefinition[] = [
   { key: 'planName', label: '契約プラン', type: 'string', target: 'contract',
     aliases: ['契約プラン', 'プラン', 'プラン名', 'plan', 'planName', 'contractPlan'] },
   { key: 'contractWatt', label: '契約ワット数', type: 'number', target: 'contract',
-    aliases: ['契約ワット数', 'ワット数', 'W数', 'W', 'ワット', 'watt', 'contractWatt', 'contract_watt'] },
+    aliases: [
+      '契約ワット数', 'ワット数', 'W数', 'W', 'ワット', 'watt', 'contractWatt', 'contract_watt',
+      // kW 表記・容量表記も同じ項目として扱う（値は normalizeNumber が W へ換算する）
+      'KW', 'kW', 'kw', 'キロワット', '契約容量', '容量', '契約電力', 'capacity', 'power',
+    ] },
   { key: 'unitPrice', label: '単価', type: 'number', target: 'contract',
     aliases: ['単価', '円/W', 'unitPrice', 'unit_price'] },
   { key: 'agencyCode', label: '代理店', type: 'string', target: 'contract',

@@ -1,5 +1,7 @@
+import Link from 'next/link';
 import { Panel, PanelHeader } from '@/components/ui/panel';
 import { PageHeader } from '@/components/data/page-header';
+import { Button } from '@/components/ui/button';
 import { Pagination } from '@/components/data/pagination';
 import { prisma } from '@/server/db';
 import { orgScope } from '@/server/authz/scope';
@@ -46,6 +48,7 @@ export async function CustomerListPage({
   const page = Number(searchParams.page ?? '1') || 1;
   const scoped = isAgencyScoped(ctx);
   const showUpsell = can(ctx, 'upsell:read');
+  const canWrite = can(ctx, 'customer:write');
 
   const result = await listCustomers(ctx, {
     name: filters.name || undefined,
@@ -128,6 +131,13 @@ export async function CustomerListPage({
       <PageHeader
         title="顧客"
         description="電力契約を獲得した顧客の一覧。複数条件を組み合わせて絞り込めます。"
+        actions={
+          canWrite ? (
+            <Button asChild variant="primary" size="md">
+              <Link href={`${basePath}/new`}>顧客を登録</Link>
+            </Button>
+          ) : null
+        }
       />
       <Panel>
         <CustomerFilters

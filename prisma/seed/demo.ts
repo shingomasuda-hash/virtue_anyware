@@ -1,5 +1,6 @@
 import { Prisma } from '../../src/generated/prisma/index.js';
 import { prisma } from './client.js';
+import { priceContract } from '../../src/server/services/pricing/snapshot.js';
 import { seedUser } from './users.js';
 import type { Masters } from './masters.js';
 
@@ -411,18 +412,21 @@ export async function seedDemo(masters: Masters) {
       if (!statusId) continue;
       const watt = 3000 + (customerIndex % 5) * 1000;
 
-      const agencyPrice = await prisma.agencyUnitPrice.findFirst({
-        where: {
-          agencyId: agency.id,
-          effectiveFrom: { lte: contractedAt },
-          OR: [{ effectiveTo: null }, { effectiveTo: { gte: contractedAt } }],
-        },
-        orderBy: { effectiveFrom: 'desc' },
+      // 金額は本番と同じ計算サービスを通す。
+      // seed が独自計算をすると本番経路との乖離に気づけなくなるため。
+      const priced = await priceContract({
+        organizationId,
+        agencyId: agency.id,
+        productId: masters.products.ELEC ?? '',
+        supplierId: masters.suppliers[i % 2 === 0 ? 'PWR_A' : 'PWR_B'] ?? null,
+        planId: masters.plans[i % 2 === 0 ? 'PWR_A_P1' : 'PWR_B_P1'] ?? null,
+        quantity: watt,
+        basisDate: contractedAt,
       });
-      const agencyUnitPrice = Number(agencyPrice?.unitPrice ?? 0);
-      const hqRevenue = watt * HQ_UNIT_PRICE;
-      const agencyPayout = watt * agencyUnitPrice;
-      const hqGrossProfit = hqRevenue - agencyPayout;
+      const agencyUnitPrice = priced.agencyUnitPrice;
+      const hqRevenue = priced.hqRevenue;
+      const agencyPayout = priced.agencyPayout;
+      const hqGrossProfit = priced.hqGrossProfit;
 
       const contractNumber = `${agency.code}-${String(customerIndex).padStart(5, '0')}`;
       const isCancelled = statusCode === 'CANCELLED';
@@ -452,12 +456,12 @@ export async function seedDemo(masters: Masters) {
           boothId: event?.boothIds[i % 2] ?? null,
           staffId: staffIds[agencyIdx * 2 + (i % 2)] ?? null,
           campaign: '夏の電力切替キャンペーン',
-          hqUnitPrice: new Prisma.Decimal(HQ_UNIT_PRICE),
+          hqUnitPrice: new Prisma.Decimal(priced.hqUnitPrice),
           agencyUnitPrice: new Prisma.Decimal(agencyUnitPrice),
           hqRevenue: new Prisma.Decimal(hqRevenue),
           agencyPayout: new Prisma.Decimal(agencyPayout),
           hqGrossProfit: new Prisma.Decimal(hqGrossProfit),
-          grossMargin: new Prisma.Decimal(hqRevenue === 0 ? 0 : hqGrossProfit / hqRevenue),
+          grossMargin: new Prisma.Decimal(priced.grossMargin),
           pricedAt: contractedAt,
         },
       });
@@ -466,17 +470,18 @@ export async function seedDemo(masters: Masters) {
         data: {
           contractId: contract.id,
           reason: 'seed:initial',
-          basisDate: contractedAt,
-          quantity: new Prisma.Decimal(watt),
-          hqUnitPrice: new Prisma.Decimal(HQ_UNIT_PRICE),
+          basisDate: priced.basisDate,
+          quantity: new Prisma.Decimal(priced.quantity),
+          hqUnitPrice: new Prisma.Decimal(priced.hqUnitPrice),
           agencyUnitPrice: new Prisma.Decimal(agencyUnitPrice),
-          hqUnitType: 'PER_WATT',
-          agencyUnitType: 'PER_WATT',
+          hqUnitType: priced.hqUnitType,
+          agencyUnitType: priced.agencyUnitType,
           hqRevenue: new Prisma.Decimal(hqRevenue),
           agencyPayout: new Prisma.Decimal(agencyPayout),
           hqGrossProfit: new Prisma.Decimal(hqGrossProfit),
-          grossMargin: new Prisma.Decimal(hqRevenue === 0 ? 0 : hqGrossProfit / hqRevenue),
-          agencyPriceId: agencyPrice?.id ?? null,
+          grossMargin: new Prisma.Decimal(priced.grossMargin),
+          hqPricingRuleId: priced.hqPricingRuleId,
+          agencyPriceId: priced.agencyPriceId,
           createdById: hqAdmin.id,
         },
       });
@@ -522,7 +527,7 @@ export async function seedDemo(masters: Masters) {
             amount: new Prisma.Decimal(hqRevenue),
             agencyPayout: new Prisma.Decimal(agencyPayout),
             grossProfit: new Prisma.Decimal(hqGrossProfit),
-            grossMargin: new Prisma.Decimal(hqRevenue === 0 ? 0 : hqGrossProfit / hqRevenue),
+            grossMargin: new Prisma.Decimal(priced.grossMargin),
           },
         });
       }

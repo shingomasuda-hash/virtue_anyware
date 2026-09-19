@@ -6,5 +6,5 @@ export default async function AgencyContractDetail({ params }: { params: Promise
   const { ctx } = await requireAgencyContext();
   requirePermission(ctx, 'contract:read');
   const { id } = await params;
-  return <ContractDetailPage ctx={ctx} id={id} customerBasePath="/agency/customers" />;
+  return <ContractDetailPage ctx={ctx} id={id} customerBasePath="/agency/customers" contractBasePath="/agency/contracts" />;
 }

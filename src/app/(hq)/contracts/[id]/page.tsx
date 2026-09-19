@@ -6,5 +6,5 @@ export default async function HqContractDetail({ params }: { params: Promise<{ i
   const { ctx } = await requireHqContext();
   requirePermission(ctx, 'contract:read');
   const { id } = await params;
-  return <ContractDetailPage ctx={ctx} id={id} customerBasePath="/customers" />;
+  return <ContractDetailPage ctx={ctx} id={id} customerBasePath="/customers" contractBasePath="/contracts" />;
 }

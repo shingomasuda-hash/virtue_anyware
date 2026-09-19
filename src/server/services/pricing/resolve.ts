@@ -93,8 +93,11 @@ export async function resolveAgencyPayoutPrice(lookup: PriceLookup): Promise<Res
         effectiveFrom: { lte: lookup.basisDate },
         AND: [{ OR: [{ effectiveTo: null }, { effectiveTo: { gte: lookup.basisDate } }] }],
       },
-      orderBy: [{ effectiveFrom: 'desc' }],
+      // 適用開始日が同じ行が複数ある場合は「後から登録されたもの」を採用する。
+      // 並び順を固定しないと解決結果が非決定的になる。
+      orderBy: [{ effectiveFrom: 'desc' }, { createdAt: 'desc' }],
     });
+    // 商材が明示されたルールを、全商材共通ルールより優先する
     const picked = prices.find((p) => p.productId === lookup.productId) ?? prices[0];
     if (picked) {
       return {

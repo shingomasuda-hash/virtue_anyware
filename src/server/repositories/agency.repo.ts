@@ -1,7 +1,7 @@
 import type { Prisma } from '@/generated/prisma';
 import { prisma } from '@/server/db';
 import type { AccessContext } from '@/server/authz/context';
-import { agencyScope, orgScope } from '@/server/authz/scope';
+import { agencyScope } from '@/server/authz/scope';
 
 export interface AgencyListFilter {
   keyword?: string;
@@ -53,25 +53,6 @@ export async function findAgencyById(ctx: AccessContext, id: string) {
       _count: { select: { customers: true, contracts: true, users: true, staff: true } },
     },
   });
-}
-
-export async function createAgency(ctx: AccessContext, data: Omit<Prisma.AgencyCreateInput, 'organization'>) {
-  const scope = orgScope(ctx);
-  if (!scope.organizationId && !ctx.organizationId) {
-    throw new Error('組織が特定できません。');
-  }
-  const organizationId = scope.organizationId ?? ctx.organizationId;
-  if (!organizationId) throw new Error('組織が特定できません。');
-  return prisma.agency.create({
-    data: { ...data, organization: { connect: { id: organizationId } } },
-  });
-}
-
-export async function updateAgency(ctx: AccessContext, id: string, data: Prisma.AgencyUpdateInput) {
-  // スコープ内に存在することを確認してから更新する
-  const existing = await prisma.agency.findFirst({ where: scopedAgencyWhere(ctx, id), select: { id: true } });
-  if (!existing) return null;
-  return prisma.agency.update({ where: { id }, data });
 }
 
 export async function listAgencyUnitPrices(ctx: AccessContext, agencyId: string) {

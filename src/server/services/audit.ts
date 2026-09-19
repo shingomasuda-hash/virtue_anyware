@@ -23,15 +23,19 @@ export type AuditAction =
   | 'export.csv'
   | 'auth.login';
 
-export interface AuditInput {
+/** 監査ログへ添えるリクエスト情報（IP / UA）。 */
+export interface AuditRequestInfo {
+  ipAddress?: string | null;
+  userAgent?: string | null;
+}
+
+export interface AuditInput extends AuditRequestInfo {
   action: AuditAction;
   entity: string;
   entityId?: string | null;
   /** 財務データ変更は before / after を必ず記録する（§27）。 */
   before?: Prisma.InputJsonValue | null;
   after?: Prisma.InputJsonValue | null;
-  ipAddress?: string | null;
-  userAgent?: string | null;
 }
 
 /**

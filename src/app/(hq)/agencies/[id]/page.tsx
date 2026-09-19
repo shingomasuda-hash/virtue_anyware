@@ -1,10 +1,15 @@
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { PageHeader } from '@/components/data/page-header';
 import { Panel, PanelBody, PanelHeader } from '@/components/ui/panel';
 import { StatCard, StatGrid } from '@/components/data/stat-card';
 import { UnitPriceHistory, type UnitPriceRow } from '@/features/agencies/components/unit-price-history';
 import { requireHqContext } from '@/server/auth/guard';
-import { requirePermission } from '@/server/authz/context';
+import { can, requirePermission } from '@/server/authz/context';
+import { Button } from '@/components/ui/button';
+import { UnitPriceForm } from '@/features/agencies/components/unit-price-form';
+import { prisma } from '@/server/db';
+import { orgScope } from '@/server/authz/scope';
 import { findAgencyById } from '@/server/repositories/agency.repo';
 import { formatDate, formatInt } from '@/lib/format';
 import { toNumber } from '@/lib/money';
@@ -28,9 +33,25 @@ export default async function AgencyDetailPage({ params }: { params: Promise<{ i
     note: p.note,
   }));
 
+  const scope = orgScope(ctx);
+  const products = await prisma.product.findMany({
+    where: { ...(scope.organizationId ? { organizationId: scope.organizationId } : {}), isActive: true },
+    orderBy: { sortOrder: 'asc' },
+  });
+
   return (
     <>
-      <PageHeader title={agency.name} description={`${agency.code}${agency.corporateName ? ` / ${agency.corporateName}` : ''}`} />
+      <PageHeader
+        title={agency.name}
+        description={`${agency.code}${agency.corporateName ? ` / ${agency.corporateName}` : ''}`}
+        actions={
+          can(ctx, 'agency:write') ? (
+            <Button asChild variant="secondary" size="md">
+              <Link href={`/agencies/${agency.id}/edit`}>代理店を編集</Link>
+            </Button>
+          ) : null
+        }
+      />
 
       <StatGrid columns={4}>
         <StatCard label="顧客数" value={formatInt(agency._count.customers)} />
@@ -71,8 +92,17 @@ export default async function AgencyDetailPage({ params }: { params: Promise<{ i
       </div>
 
       <Panel>
-        <PanelHeader title="代理店単価履歴" description="適用期間つき。過去契約の金額はスナップショットで保護されます。" />
+        <PanelHeader
+          title="代理店単価履歴"
+          description="適用期間つき。過去契約の金額はスナップショットで保護されます。"
+        />
         <UnitPriceHistory rows={priceRows} />
+        {can(ctx, 'pricing:write') ? (
+          <UnitPriceForm
+            agencyId={agency.id}
+            products={products.map((p) => ({ value: p.id, label: p.name }))}
+          />
+        ) : null}
       </Panel>
     </>
   );

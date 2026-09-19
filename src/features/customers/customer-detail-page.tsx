@@ -5,6 +5,7 @@ import { Panel, PanelBody, PanelHeader } from '@/components/ui/panel';
 import { Badge, toneFromColor } from '@/components/ui/badge';
 import { Table, TableWrap, Td, Th, Tr, EmptyRow } from '@/components/ui/table';
 import { canViewHqFinancials, can, type AccessContext } from '@/server/authz/context';
+import { Button } from '@/components/ui/button';
 import { findCustomerById } from '@/server/repositories/customer.repo';
 import { formatDate, formatDateTime, formatPercent, formatWatt, formatYen } from '@/lib/format';
 import { toNumber } from '@/lib/money';
@@ -18,10 +19,12 @@ export async function CustomerDetailPage({
   ctx,
   id,
   contractBasePath,
+  customerBasePath,
 }: {
   ctx: AccessContext;
   id: string;
   contractBasePath: string;
+  customerBasePath: string;
 }) {
   const customer = await findCustomerById(ctx, id);
   // スコープ外 ID は null。URL 直打ちでも他代理店の顧客は見えない。
@@ -29,12 +32,28 @@ export async function CustomerDetailPage({
 
   const showHq = canViewHqFinancials(ctx);
   const showUpsell = can(ctx, 'upsell:read');
+  const canEditCustomer = can(ctx, 'customer:write');
+  const canWriteContract = can(ctx, 'contract:write');
 
   return (
     <>
       <PageHeader
         title={customer.name}
         description={[customer.nameKana, customer.agency?.name].filter(Boolean).join(' / ') || undefined}
+        actions={
+          <>
+            {canEditCustomer ? (
+              <Button asChild variant="secondary" size="md">
+                <Link href={`${customerBasePath}/${customer.id}/edit`}>顧客を編集</Link>
+              </Button>
+            ) : null}
+            {canWriteContract ? (
+              <Button asChild variant="primary" size="md">
+                <Link href={`${contractBasePath}/new?customerId=${customer.id}`}>契約を登録</Link>
+              </Button>
+            ) : null}
+          </>
+        }
       />
 
       {/* 1. 基本情報 */}

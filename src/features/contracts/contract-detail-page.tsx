@@ -5,7 +5,9 @@ import { Panel, PanelBody, PanelHeader } from '@/components/ui/panel';
 import { Badge, toneFromColor } from '@/components/ui/badge';
 import { Table, TableWrap, Td, Th, Tr, EmptyRow } from '@/components/ui/table';
 import { StatCard, StatGrid } from '@/components/data/stat-card';
-import { canViewHqFinancials, type AccessContext } from '@/server/authz/context';
+import { can, canViewHqFinancials, type AccessContext } from '@/server/authz/context';
+import { Button } from '@/components/ui/button';
+import { CancelContractForm, RepriceContractForm } from './components/contract-actions';
 import { getContractDetail } from '@/server/services/contracts';
 import { formatDate, formatDateTime, formatNumber, formatPercent, formatWatt, formatYen } from '@/lib/format';
 import { toNumber } from '@/lib/money';
@@ -14,24 +16,44 @@ export async function ContractDetailPage({
   ctx,
   id,
   customerBasePath,
+  contractBasePath,
 }: {
   ctx: AccessContext;
   id: string;
   customerBasePath: string;
+  contractBasePath: string;
 }) {
   const detail = await getContractDetail(ctx, id);
   if (!detail) notFound();
 
   const { contract, amounts } = detail;
   const showHq = canViewHqFinancials(ctx);
+  const canWrite = can(ctx, 'contract:write');
+  const canReprice = canWrite && can(ctx, 'pricing:write');
 
   return (
     <>
       <PageHeader
         title={contract.contractNumber ?? '（契約番号なし）'}
         description={`${contract.customer.name} / ${contract.product.name}`}
-        actions={<Badge tone={toneFromColor(contract.status.color)}>{contract.status.label}</Badge>}
+        actions={
+          <>
+            <Badge tone={toneFromColor(contract.status.color)}>{contract.status.label}</Badge>
+            {canWrite ? (
+              <Button asChild variant="secondary" size="md">
+                <Link href={`${contractBasePath}/${contract.id}/edit`}>編集</Link>
+              </Button>
+            ) : null}
+          </>
+        }
       />
+
+      {canWrite && !contract.status.isCancelled ? (
+        <div className="flex flex-wrap items-start gap-3">
+          <CancelContractForm contractId={contract.id} />
+          {canReprice ? <RepriceContractForm contractId={contract.id} /> : null}
+        </div>
+      ) : null}
 
       <StatGrid columns={showHq ? 6 : 3}>
         <StatCard label="契約ワット数" value={formatWatt(toNumber(contract.contractWatt))} />

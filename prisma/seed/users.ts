@@ -1,9 +1,17 @@
 import { hashPassword } from 'better-auth/crypto';
 import { prisma } from './client.js';
+import { resolveDemoPassword } from './guard.js';
 import type { UserRole } from '../../src/generated/prisma/index.js';
 
-/** 開発・検証用の共通パスワード。本番環境では絶対に使用しないこと。 */
-export const DEMO_PASSWORD = 'Virtue#2026';
+/**
+ * 検証用アカウントのパスワード。
+ *
+ * 既定値は開発・テスト環境でのみ使われ、それ以外ではランダム生成される。
+ * `SEED_DEMO_PASSWORD` で明示的に上書きできる（prisma/seed/guard.ts 参照）。
+ */
+const resolved = resolveDemoPassword();
+export const DEMO_PASSWORD = resolved.password;
+export const DEMO_PASSWORD_GENERATED = resolved.generated;
 
 export interface UserSeed {
   email: string;

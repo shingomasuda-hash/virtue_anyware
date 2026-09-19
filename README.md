@@ -30,6 +30,7 @@
 | [docs/10_ROADMAP.md](docs/10_ROADMAP.md) | PHASE 1–11 の実装ロードマップと進捗 |
 | [docs/11_MANAGEMENT_ACCOUNTING.md](docs/11_MANAGEMENT_ACCOUNTING.md) | 利益構造・催事別PL・ブース位置分析・原価配賦・会計連携 |
 | [docs/12_SECURITY.md](docs/12_SECURITY.md) | 脅威と対策・PII 取扱い・監査対象 |
+| [docs/13_PHASE1_AUDIT.md](docs/13_PHASE1_AUDIT.md) | **PHASE 1 総点検レポート**（検出した問題と是正内容） |
 | [docs/KPI_DEFINITIONS.md](docs/KPI_DEFINITIONS.md) | **全 KPI の計算式（唯一の定義）** |
 | [ASSUMPTIONS.md](ASSUMPTIONS.md) | 仕様が未確定な箇所で置いた仮定 |
 
@@ -104,7 +105,34 @@ npm test            # Vitest（単体 + 統合）
 npm run db:migrate  # マイグレーション作成/適用
 npm run db:seed     # シード投入
 npm run db:reset    # DB リセット + 再シード
+npm run preflight   # 本番投入前チェック（開発用の資格情報が残っていないか）
 ```
+
+### 本番投入前に必ず実行すること
+
+```bash
+npm run preflight
+```
+
+以下を機械的に検査し、1 件でも重大な問題があれば非ゼロ終了する。
+
+- `BETTER_AUTH_SECRET` が 32 バイト以上かつ開発既定値でないこと
+- `BETTER_AUTH_URL` が https であること（警告）
+- `DATABASE_URL` が SSL を要求していること（警告）
+- **デモ用アカウント（`@virtue.example.jp` / `@example.jp`）が残っていないこと**
+- **既知のデモパスワードで認証できるアカウントが存在しないこと**（ハッシュを実際に検証）
+- 有効な SUPER_ADMIN が 1 名以上いること
+- 組織・単価マスタ・キャンセル用ステータスが登録されていること
+
+さらに、シード自体が本番環境を検知して停止する。
+
+- `NODE_ENV=production` のとき → 中止
+- `DATABASE_URL` に `prod` / `production` が含まれるとき → 中止
+- 上書きするには `ALLOW_DEMO_SEED=true` を明示する必要がある
+- デモパスワードは開発/テスト環境でのみ既定値。それ以外では**ランダム生成**される
+
+> **本番投入時は全アカウントを再作成する前提**です。デモアカウントを残したままでは
+> `npm run preflight` がエラーになり、リリース手順を通過できません。
 
 ---
 
@@ -177,15 +205,63 @@ npm test
 | キャンセル契約 → 有効売上・支払集計から除外される | `tests/unit/kpi.test.ts` / `tests/integration/isolation.test.ts` |
 | 5,000W / 150円 / 100円 → 750,000 / 500,000 / 250,000 | `tests/unit/pricing.test.ts` |
 | Shift-JIS CSV の読み込み・列マッピング推測・値正規化 | `tests/unit/csv.test.ts` |
+| 顧客登録・契約登録・代理店紐付け（代理店の入力を信用しない） | `tests/integration/write-paths.test.ts` |
+| 監査ログに変更前後が記録される | `tests/integration/write-paths.test.ts` |
+| 同じ CSV を 2 回取り込んでも二重登録されない | `tests/integration/csv-import.test.ts` |
+| 不正なワット数がエラーになり、正常 9 件と切り分けられる | `tests/integration/csv-import.test.ts` |
+| 存在しない代理店が警告 / エラーになる | `tests/integration/csv-import.test.ts` |
+| ロールバックが対象データのみ安全に戻す | `tests/integration/csv-import.test.ts` |
+| 代理店ユーザーが CSV インポートへアクセスできない | `tests/integration/csv-import.test.ts` |
 
 統合テストは `TEST_DATABASE_URL`（既定 `virtue_test`）に対して実行され、開発 DB を汚さない。
 
 ---
 
-## 7. 現在の実装状況
+## 7. CSV インポート（PHASE 2）
 
-PHASE 1 完了。加えて PHASE 2/3 の中核サービス（CSV 解析・重複判定・単価解決・収益計算）と
-PHASE 4 のダッシュボードを先行実装している。
+`/import` から 6 ステップで取り込む。**実際の CSV フォーマットが未確定でも動くよう、
+特定の列名に固定しない設計**にしている。
+
+```
+STEP1 アップロード → STEP2 CSV解析 → STEP3 列マッピング
+     → STEP4 プレビュー → STEP5 エラー・重複確認 → STEP6 インポート確定
+```
+
+| 機能 | 内容 |
+| --- | --- |
+| 列マッピング | CSV 列 ↔ DB 項目を自由に紐付け。`氏名`/`契約者名`/`NAME`/`customer_name` → `customer.name`、`KW`/`ワット数`/`契約容量` → `contract.watt` などを自動推測し、手動修正も可能 |
+| 値の正規化 | `5kW` → `5000` / `"6,500"` → `6500` / `7200W` → `7200` / 電話番号を数字のみに正規化 |
+| 文字コード | UTF-8 / UTF-8(BOM) / Shift-JIS(CP932) を自動判定。手動指定も可能 |
+| テンプレート | 列マッピングと取込オプションを保存。「電力会社A CSV」「精算データCSV」などを再利用 |
+| プレビュー | 既定 50 行（追加読込可）。新規=緑 / 更新=青 / 重複=黄 / エラー=赤 / 警告 を色分け＋フィルタ |
+| バリデーション | 契約番号・氏名・電話番号・代理店・ワット数・契約日・ステータス・単価。数値項目の文字混入も検出 |
+| 重複防止 | ①契約番号 ②外部顧客ID ③電話＋氏名 ④その他複合キー。完全一致以外は自動登録せず「重複候補」として保留 |
+| **DRY RUN** | DB へ一切書き込まず、新規 / 更新 / 重複 / エラー / 警告の件数を試算 |
+| 取込履歴 | バッチ単位に 取込日時・ユーザー・ファイル名・行数・新規/更新/重複/エラー件数と行ごとの結果を保存 |
+| ロールバック | バッチ単位で取り消し。**取込後に人が変更したデータ、売上が紐づいた契約は巻き戻さない** |
+
+検証用のサンプル CSV は [`fixtures/csv/`](fixtures/csv/) にある（正常・重複・エラー・別列名・未知代理店・Shift-JIS）。
+
+### 画面
+
+| URL | 内容 |
+| --- | --- |
+| `/import` | 新規インポート（STEP1 アップロード） |
+| `/import/{batchId}` | STEP2 解析結果 + STEP3 列マッピング |
+| `/import/{batchId}/preview` | STEP4 プレビュー + STEP5 エラー確認 + STEP6 確定 / DRY RUN |
+| `/import/history` | インポート履歴 |
+| `/import/history/{batchId}` | 取込結果の詳細・ロールバック |
+| `/import/templates` | CSVテンプレート管理 |
+
+代理店ユーザーはこれらの画面にアクセスできない（画面 307 / API 403）。
+
+---
+
+## 8. 現在の実装状況
+
+PHASE 1 完了（総点検・是正済み → [docs/13_PHASE1_AUDIT.md](docs/13_PHASE1_AUDIT.md)）。
+PHASE 2（CSV インポート）完了。
+PHASE 3/4 の中核（単価解決・収益計算・KPI・ダッシュボード）は先行実装済み。
 PHASE 5–11（催事管理画面・経費承認・精算・分析・LTV・会計CSV）は
 **スキーマとシードを先に完成させてある**（§85「元データが正しく蓄積されること」を優先）。
 
@@ -193,7 +269,7 @@ PHASE 5–11（催事管理画面・経費承認・精算・分析・LTV・会�
 
 ---
 
-## 8. セキュリティ
+## 9. セキュリティ
 
 - 認証: Better Auth（scrypt / httpOnly+SameSite cookie / ログイン 5req/min のレート制限）
 - 認可: サーバー側で全経路チェック。フロントの出し分けは UX 目的のみ
