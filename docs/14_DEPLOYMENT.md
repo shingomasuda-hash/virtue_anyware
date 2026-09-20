@@ -131,17 +131,69 @@ find .next -name "*.nft.json" -exec grep -l "query_compiler_fast_bg.wasm" {} \; 
 `BETTER_AUTH_URL` → `VERCEL_PROJECT_PRODUCTION_URL` → `VERCEL_URL` → localhost の順で解決するようにした。
 プレビューデプロイのドメインも `trustedOrigins` に自動追加される。
 
-## 14.4 まだ起こりうる問題
+### ⑦ トップページが 500 になり「エラーが発生しました」だけが表示される
+
+**原因**: `DATABASE_URL` か `BETTER_AUTH_SECRET` が未設定だと、
+Server Component がセッション解決の時点で例外を投げる。
+以前はエラー画面に情報が無く、原因の切り分けができなかった。
+
+**再現方法**（ローカル）:
+
+```bash
+mv .env .env.disabled                       # Next.js は .env を自動で読むため退避する
+BETTER_AUTH_SECRET=... npx next start       # DATABASE_URL を渡さずに起動
+curl -o /dev/null -w '%{http_code}\n' localhost:3000/   # → 500
+mv .env.disabled .env
+```
+
+**対処**: `/api/health` を追加し、エラー画面が自動でその結果を表示するようにした。
+これにより「どの環境変数が足りないか」がブラウザ上で分かる。
+
+## 14.4 まず `/api/health` を開く
+
+デプロイ先で何か起きたら、最初にこれを開く。
+
+```
+https://<あなたのドメイン>/api/health
+```
+
+環境変数・DB 接続・マイグレーション・初期データを順に検査し、
+**何が足りないかを日本語で返す**。ログを見に行かなくても切り分けられる。
+
+```json
+{
+  "ok": false,
+  "summary": "設定または初期化が完了していません。checks の error を解消してください。",
+  "checks": [
+    { "name": "DATABASE_URL", "status": "ok", "detail": "設定済み" },
+    { "name": "BETTER_AUTH_SECRET", "status": "error", "detail": "未設定",
+      "hint": "32 文字以上の値を設定してください（openssl rand -base64 32）。" },
+    { "name": "マイグレーション適用", "status": "error",
+      "detail": "The table `public.users` does not exist in the current database.",
+      "hint": "npx prisma migrate deploy を本番 DB に対して実行してください。" }
+  ]
+}
+```
+
+- すべて `ok` なら HTTP 200、`error` があれば HTTP 503 を返す。
+- **秘密情報は返さない**。接続文字列・鍵・個人情報は出力せず、
+  エラー文中のホスト名・認証情報は伏字にする。正常時は件数も出さない。
+- エラー画面（`error.tsx`）もこの結果を自動で取得し、
+  設定不備があればその場に表示する。併せて表示される「エラーID」は
+  Vercel の Runtime Logs の digest と一致するので、ログ照合に使える。
+
+## 14.5 まだ起こりうる問題
 
 | 症状 | 原因 | 対処 |
 | --- | --- | --- |
+| **トップページで「エラーが発生しました」** | `DATABASE_URL` または `BETTER_AUTH_SECRET` が未設定 | `/api/health` で確認 → Vercel に設定して**再デプロイ** |
 | `relation "users" does not exist` | マイグレーション未適用 | 14.2 の手順 1 を実行 |
 | ログインできるが画面が空 | マスタ未投入 | 14.2 の手順 2 を実行 |
 | `too many connections` | プーラーを通していない | 接続文字列を `-pooler` 付きに変更 |
 | `TlsConnectionError` | `sslmode` 未指定 | `?sslmode=require` を付与 |
 | 502 / タイムアウト | 関数のメモリ・時間不足 | Vercel の Function 設定を引き上げる |
 
-## 14.5 ローカルで Vercel 相当の検証をする
+## 14.6 ローカルで Vercel 相当の検証をする
 
 ```bash
 # クリーンクローン + npm ci + 環境変数なしビルド（Vercel と同条件）

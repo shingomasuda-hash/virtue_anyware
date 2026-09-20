@@ -130,6 +130,10 @@ npm run preflight
 Vercel に設定する環境変数: `DATABASE_URL`（**プーラー経由** + `sslmode=require`）/
 `BETTER_AUTH_SECRET` / `BETTER_AUTH_URL`。
 
+**デプロイ先で何か起きたら、まず `/api/health` を開く。**
+環境変数・DB 接続・マイグレーション・初期データを検査し、何が足りないかを返す
+（秘密情報は含まない）。エラー画面もこの結果を自動表示する。
+
 ビルドが Vercel と同条件で通るかはローカルで検証できる:
 
 ```bash
