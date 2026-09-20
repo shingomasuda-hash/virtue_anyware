@@ -26,6 +26,25 @@ postgresql://USER:PASSWORD@ep-xxxx-pooler.ap-southeast-1.aws.neon.tech/virtue?ss
 
 ## 14.2 デプロイ手順
 
+### 事前準備（初回のみ / ターミナル）
+
+```bash
+# Node.js 20.11 以上が必要
+node -v
+
+# リポジトリを取得（main ではなく作業ブランチを指定する）
+git clone -b claude/compassionate-lovelace-tzr2g9 \
+  https://github.com/shingomasuda-hash/virtue_anyware.git
+cd virtue_anyware
+
+# 依存関係の導入（postinstall で Prisma Client も生成される）
+npm ci
+```
+
+> `src/generated/prisma` は Git 管理外のため、`npm ci` を省くと
+> `db:deploy` / `db:bootstrap` がモジュール未検出で失敗する。
+
+
 ```bash
 # 1. マイグレーションを本番 DB へ適用する（Vercel のビルドでは実行されない）
 DATABASE_URL="<本番のURL>" npx prisma migrate deploy
