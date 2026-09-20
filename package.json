@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",
+    "postinstall": "prisma generate",
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
