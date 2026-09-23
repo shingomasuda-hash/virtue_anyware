@@ -19,7 +19,10 @@ export type AuditAction =
   | 'import.rollback'
   | 'settlement.confirm'
   | 'expense.approve'
+  | 'user.create'
   | 'user.role_change'
+  | 'user.password_reset'
+  | 'user.password_change'
   | 'export.csv'
   | 'auth.login';
 

@@ -5,6 +5,8 @@ export interface NavItem {
   href: string;
   /** 表示に必要な権限（UX 目的。真の防御はサーバー側）。 */
   permission?: Permission;
+  /** 未実装の PHASE。リンクにせず「準備中」として表示する（誤って 404 へ飛ばさない）。 */
+  comingSoon?: boolean;
   badge?: string;
 }
 
@@ -19,7 +21,7 @@ export const HQ_NAV: NavSection[] = [
     title: '概況',
     items: [
       { label: 'ダッシュボード', href: '/dashboard', permission: 'report:read' },
-      { label: '経営ダッシュボード', href: '/executive', permission: 'finance:hq', badge: 'P10' },
+      { label: '経営ダッシュボード', href: '/executive', permission: 'finance:hq', comingSoon: true, badge: 'P10' },
     ],
   },
   {
@@ -32,42 +34,43 @@ export const HQ_NAV: NavSection[] = [
   {
     title: 'CRM',
     items: [
-      { label: 'アップセル', href: '/upsell', permission: 'upsell:read', badge: 'P5' },
-      { label: 'トスアップ', href: '/tossups', permission: 'upsell:read', badge: 'P5' },
+      { label: 'アップセル', href: '/upsell', permission: 'upsell:read', comingSoon: true, badge: 'P5' },
+      { label: 'トスアップ', href: '/tossups', permission: 'upsell:read', comingSoon: true, badge: 'P5' },
     ],
   },
   {
     title: '催事',
     items: [
-      { label: '催事', href: '/events', permission: 'event:read', badge: 'P7' },
-      { label: '施設', href: '/facilities', permission: 'event:read', badge: 'P7' },
+      { label: '催事', href: '/events', permission: 'event:read', comingSoon: true, badge: 'P7' },
+      { label: '施設', href: '/facilities', permission: 'event:read', comingSoon: true, badge: 'P7' },
     ],
   },
   {
     title: '代理店',
     items: [
       { label: '代理店', href: '/agencies', permission: 'agency:read' },
-      { label: '精算', href: '/settlements', permission: 'settlement:read', badge: 'P6' },
+      { label: '精算', href: '/settlements', permission: 'settlement:read', comingSoon: true, badge: 'P6' },
     ],
   },
   {
     title: '会計',
     items: [
-      { label: '売上', href: '/revenue', permission: 'finance:hq', badge: 'P3' },
-      { label: '経費', href: '/expenses', permission: 'expense:read', badge: 'P8' },
+      { label: '売上', href: '/revenue', permission: 'finance:hq', comingSoon: true, badge: 'P3' },
+      { label: '経費', href: '/expenses', permission: 'expense:read', comingSoon: true, badge: 'P8' },
     ],
   },
   {
     title: 'データ',
     items: [
       { label: 'CSVインポート', href: '/import', permission: 'import:run' },
-      { label: 'レポート', href: '/reports', permission: 'report:read', badge: 'P9' },
+      { label: 'レポート', href: '/reports', permission: 'report:read', comingSoon: true, badge: 'P9' },
     ],
   },
   {
     title: '管理',
     items: [
       { label: 'ユーザー', href: '/users', permission: 'user:manage' },
+      { label: 'アカウント設定', href: '/account' },
       { label: '単価マスタ', href: '/settings/pricing', permission: 'pricing:read' },
       { label: '監査ログ', href: '/settings/audit', permission: 'audit:read' },
     ],
@@ -82,8 +85,9 @@ export const AGENCY_NAV: NavSection[] = [
       { label: 'ダッシュボード', href: '/agency/dashboard' },
       { label: '顧客', href: '/agency/customers', permission: 'customer:read' },
       { label: '契約', href: '/agency/contracts', permission: 'contract:read' },
-      { label: '売上/精算', href: '/agency/settlements', permission: 'settlement:read', badge: 'P6' },
-      { label: 'スタッフ', href: '/agency/staff', permission: 'agency:read', badge: 'P7' },
+      { label: '売上/精算', href: '/agency/settlements', permission: 'settlement:read', comingSoon: true, badge: 'P6' },
+      { label: 'スタッフ', href: '/agency/staff', permission: 'agency:read', comingSoon: true, badge: 'P7' },
+      { label: 'アカウント設定', href: '/agency/account' },
     ],
   },
 ];

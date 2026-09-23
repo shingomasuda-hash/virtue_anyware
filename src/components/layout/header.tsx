@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -9,10 +10,12 @@ export function Header({
   userName,
   roleLabel,
   agencyName,
+  accountHref,
 }: {
   userName: string;
   roleLabel: string;
   agencyName: string | null;
+  accountHref: string;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -30,10 +33,14 @@ export function Header({
         {agencyName ? <span className="font-medium text-[var(--color-ink-muted)]">{agencyName}</span> : null}
       </div>
       <div className="flex items-center gap-3">
-        <div className="hidden text-right sm:block">
+        <Link
+          href={accountHref}
+          className="hidden text-right sm:block hover:underline"
+          title="アカウント設定"
+        >
           <p className="text-[12px] font-medium leading-tight">{userName}</p>
           <p className="text-[10px] text-[var(--color-ink-subtle)]">{roleLabel}</p>
-        </div>
+        </Link>
         <Button size="sm" variant="secondary" onClick={handleSignOut} disabled={busy}>
           {busy ? '処理中…' : 'ログアウト'}
         </Button>

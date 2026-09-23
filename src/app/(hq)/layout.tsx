@@ -20,6 +20,7 @@ export default async function HqLayout({ children }: { children: React.ReactNode
       userName={ctx.name}
       roleLabel={ROLE_LABELS[ctx.role]}
       agencyName={agencyName}
+      accountHref="/account"
     >
       {children}
     </AppShell>

@@ -31,11 +31,14 @@
 | 代理店 | 代理店 / 精算 | `/agencies` `/settlements` |
 | 会計 | 売上 / 経費 / 入金 / 支払 / 請求書 | `/revenue` `/expenses` `/receivables` `/payables` `/invoices` |
 | データ | CSVインポート / レポート | `/import` `/reports` |
-| 管理 | ユーザー / 設定 / 監査ログ | `/users` `/settings` `/settings/audit` |
+| 管理 | ユーザー / アカウント設定 / 単価マスタ / 監査ログ | `/users` `/account` `/settings/pricing` `/settings/audit` |
+
+未実装の PHASE の項目はサイドバーで「準備中」として表示し、リンクにしない
+（`NavItem.comingSoon`）。存在しない URL へ遷移させないための措置。
 
 ### 代理店
 ダッシュボード `/agency/dashboard` / 顧客 `/agency/customers` / 契約 `/agency/contracts` /
-売上・精算 `/agency/settlements` / スタッフ `/agency/staff`
+売上・精算 `/agency/settlements` / スタッフ `/agency/staff` / アカウント設定 `/agency/account`
 
 ## 6.3 主要ページ一覧
 
@@ -60,6 +63,8 @@
 | 17 | 精算 | 6 | 代理店×対象月。未確定/確定/支払処理中/支払済 |
 | 18 | CSVエクスポート | 6 | 顧客/契約/代理店別実績/売上/粗利/精算/アップセル |
 | 19 | 監査ログ | 6 | 変更前後の値を表示 |
+| 19a | ユーザー一覧/登録/編集 | 1 | ロール・所属代理店・有効/無効。管理者によるパスワード再設定 |
+| 19b | アカウント設定 | 1 | 本人によるパスワード変更（本部 `/account` / 代理店 `/agency/account`） |
 | 20 | 施設マスタ/詳細 | 7 | 出店履歴タイムライン・平均CPA/ROI |
 | 21 | 催事一覧/詳細 | 7 | 概要・ブース・シフト・経費・KPI・PL |
 | 22 | ブース登録/位置タグ | 7 | 立地タグ複数・視認性1-5 |

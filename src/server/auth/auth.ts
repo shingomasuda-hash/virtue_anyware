@@ -1,7 +1,9 @@
 import { betterAuth } from 'better-auth';
+import { APIError } from 'better-auth/api';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
 import { nextCookies } from 'better-auth/next-js';
 import { prisma } from '@/server/db';
+import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from '@/lib/password';
 import { resolveBaseUrl, resolveTrustedOrigins } from './base-url';
 
 /**
@@ -17,8 +19,9 @@ export const auth = betterAuth({
   trustedOrigins: resolveTrustedOrigins(),
   emailAndPassword: {
     enabled: true,
-    minPasswordLength: 8,
-    maxPasswordLength: 128,
+    // 強度の基準は src/lib/password.ts に一本化する
+    minPasswordLength: MIN_PASSWORD_LENGTH,
+    maxPasswordLength: MAX_PASSWORD_LENGTH,
     autoSignIn: false,
   },
   session: {
@@ -49,6 +52,27 @@ export const auth = betterAuth({
       phone: { type: 'string', required: false, input: false },
       isActive: { type: 'boolean', required: false, input: false, defaultValue: true },
       lastLoginAt: { type: 'date', required: false, input: false },
+    },
+  },
+  databaseHooks: {
+    session: {
+      create: {
+        /**
+         * 無効化されたユーザーにはセッションを発行しない。
+         *
+         * これが無いと「ログインは成功するが画面に入れない」状態になり、
+         * 利用者からはログイン画面へ戻され続けるだけに見える。
+         * 無効化を即座に効かせる責務はここ（サーバー側）に置く。
+         */
+        async before(session, ctx) {
+          if (!ctx) return;
+          const user = await ctx.context.internalAdapter.findUserById(session.userId);
+          if (user && (user as { isActive?: boolean }).isActive === false) {
+            // 原因は明かさない（アカウント列挙対策 §31）。ログイン画面は汎用メッセージを表示する。
+            throw APIError.from('FORBIDDEN', { message: 'この操作は許可されていません。', code: 'INACTIVE_USER' });
+          }
+        },
+      },
     },
   },
   plugins: [nextCookies()],

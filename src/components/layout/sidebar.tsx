@@ -29,6 +29,28 @@ export function Sidebar({ sections, organizationName }: { sections: NavSection[]
             <ul>
               {section.items.map((item) => {
                 const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+                const badge = item.badge ? (
+                  <span className="shrink-0 rounded-[var(--radius-xs)] border border-[var(--color-border)] px-1 text-[9px] text-[var(--color-ink-subtle)]">
+                    {item.badge}
+                  </span>
+                ) : null;
+
+                // 未実装の画面はリンクにしない。存在しない URL へ飛ばさないための措置。
+                if (item.comingSoon) {
+                  return (
+                    <li key={item.href}>
+                      <span
+                        aria-disabled="true"
+                        title={`準備中（${item.badge ?? '未実装'}）`}
+                        className="flex cursor-not-allowed items-center justify-between gap-2 rounded-[var(--radius-sm)] px-2 py-1.5 text-[13px] text-[var(--color-ink-subtle)]"
+                      >
+                        <span className="truncate">{item.label}</span>
+                        {badge}
+                      </span>
+                    </li>
+                  );
+                }
+
                 return (
                   <li key={item.href}>
                     <Link
@@ -39,11 +61,7 @@ export function Sidebar({ sections, organizationName }: { sections: NavSection[]
                       )}
                     >
                       <span className="truncate">{item.label}</span>
-                      {item.badge ? (
-                        <span className="shrink-0 rounded-[var(--radius-xs)] border border-[var(--color-border)] px-1 text-[9px] text-[var(--color-ink-subtle)]">
-                          {item.badge}
-                        </span>
-                      ) : null}
+                      {badge}
                     </Link>
                   </li>
                 );

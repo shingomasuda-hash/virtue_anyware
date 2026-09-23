@@ -55,7 +55,13 @@ ADMIN_EMAIL="admin@your-company.co.jp" \
 ADMIN_NAME="管理者名" \
 npm run db:bootstrap
 #   → 初期パスワードが表示される。控えて初回ログイン後に変更すること。
+#      変更は画面右上のユーザー名 →「アカウント設定」(/account) から行う。
 #   → ADMIN_PASSWORD を指定すれば自分で決められる（12文字以上・3種類以上）
+#
+# 2-b. 本部スタッフ・代理店ユーザーの追加
+#      管理者でログイン後、サイドバー「管理 → ユーザー」(/users) から登録する。
+#      初期パスワードは管理者が設定し、安全な方法で本人へ伝える。
+#      本人はログイン後に /account（代理店ユーザーは /agency/account）で変更する。
 
 # 3. 本番投入前チェック
 DATABASE_URL="<本番のURL>" BETTER_AUTH_SECRET="<本番の値>" BETTER_AUTH_URL="<公開URL>" \

@@ -13,6 +13,7 @@ export function AppShell({
   userName,
   roleLabel,
   agencyName,
+  accountHref,
   children,
 }: {
   sections: NavSection[];
@@ -20,6 +21,7 @@ export function AppShell({
   userName: string;
   roleLabel: string;
   agencyName: string | null;
+  accountHref: string;
   children: React.ReactNode;
 }) {
   return (
@@ -28,7 +30,7 @@ export function AppShell({
         <Sidebar sections={sections} organizationName={organizationName} />
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
-        <Header userName={userName} roleLabel={roleLabel} agencyName={agencyName} />
+        <Header userName={userName} roleLabel={roleLabel} agencyName={agencyName} accountHref={accountHref} />
         <main className="flex-1 px-4 py-5 lg:px-6">
           <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-5">{children}</div>
         </main>

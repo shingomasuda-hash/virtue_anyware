@@ -19,6 +19,7 @@ export default async function AgencyLayout({ children }: { children: React.React
       userName={ctx.name}
       roleLabel={ROLE_LABELS[ctx.role]}
       agencyName={agencyName}
+      accountHref="/agency/account"
     >
       {children}
     </AppShell>

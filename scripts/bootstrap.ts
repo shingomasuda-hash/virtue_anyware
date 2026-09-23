@@ -4,6 +4,7 @@ import { hashPassword } from 'better-auth/crypto';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../src/generated/prisma/index.js';
 import { seedMasters } from '../prisma/seed/masters.js';
+import { validatePassword } from '../src/lib/password.js';
 
 /**
  * 本番環境の初期化。
@@ -22,19 +23,15 @@ import { seedMasters } from '../prisma/seed/masters.js';
  * 冪等に動作する。既に同じメールのユーザーがいれば作成せず終了する。
  */
 
-const MIN_PASSWORD_LENGTH = 12;
-
 function generatePassword(): string {
   return `${randomBytes(12).toString('base64url')}#Aa1`;
 }
 
+/** 判定はアプリと同じ `src/lib/password.ts` を使う（強度基準を二重管理しない）。 */
 function assertStrongPassword(password: string): void {
-  if (password.length < MIN_PASSWORD_LENGTH) {
-    throw new Error(`ADMIN_PASSWORD は ${MIN_PASSWORD_LENGTH} 文字以上にしてください。`);
-  }
-  const classes = [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z0-9]/].filter((re) => re.test(password)).length;
-  if (classes < 3) {
-    throw new Error('ADMIN_PASSWORD は英大文字・小文字・数字・記号のうち 3 種類以上を含めてください。');
+  const issues = validatePassword(password);
+  if (issues.length > 0) {
+    throw new Error(`ADMIN_PASSWORD がポリシーを満たしていません: ${issues.map((i) => i.message).join(' ')}`);
   }
 }
 
