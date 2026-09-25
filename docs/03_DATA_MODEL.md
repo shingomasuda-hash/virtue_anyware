@@ -21,6 +21,15 @@
 │                             └─ tossups ─── partners            │
 └──────────────────────────────────────────────────────────┘
         │
+┌─ 案件（太陽光・蓄電池）docs/15_DEAL_MANAGEMENT.md ────────┐
+│ customers ─ deals ─┬─ deal_statuses(master)                    │
+│                    ├─ deal_progresses (1:1 審査/現調/工事/入金) │
+│                    ├─ deal_compensations (1:1 原価とコミッション)│
+│                    ├─ deal_activities (ステータス変更・対応履歴) │
+│                    ├─ manufacturers ─ equipment_models          │
+│                    └─ partners(信販会社 kinds に FINANCE)        │
+└──────────────────────────────────────────────────────────┘
+        │
 ┌─ 催事 ──────────────────────────────────────────────────┐
 │ facilities ─ events ─┬─ booths ─ event_booth_tags ─ booth_tags │
 │                      ├─ event_staff_shifts ─ staff             │

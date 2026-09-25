@@ -95,6 +95,34 @@
 | **アップセル率** | `成約数 / アップセル対象顧客数` |
 | ファネル転換率 | 各段階件数 ÷ **直前段階の件数** |
 
+## 4.5 案件KPI（太陽光・蓄電池 / docs/15_DEAL_MANAGEMENT.md 15.7）
+
+案件（`deals`）は電力契約と金額の決まり方が違うため、KPI も別に定義する。
+`売上` は**販売価格（税抜）の合計**で、粗利ではない。
+
+| KPI | 式 |
+| --- | --- |
+| 総顧客数 | 案件を持つ顧客の数 `count(distinct deals.customer_id)` |
+| 進行中案件 | `count(deals WHERE deal_statuses.is_open)` |
+| 今月の契約件数 | `count(deals WHERE contracted_at ∈ 当月)` |
+| 今月の契約売上 | `sum(deals.sales_price_excl_tax WHERE contracted_at ∈ 当月)` |
+| 原価合計 | `設備費 + 工事代 + 延長保証料 + その他原価` |
+| 営業利益 | `販売価格(税抜) − 原価合計` |
+| コミッション対象額 | `max(0, 営業利益 − 控除額)` |
+| 営業コミッション | `コミッション対象額 × 営業コミッション率` |
+| 代理店コミッション | `コミッション対象額 × 代理店コミッション率` |
+| 会社残粗利 | `営業利益 − 営業コミッション − 代理店コミッション` |
+| 営業利益合計 | `sum(deal_compensations.gross_profit)` |
+| 次回アクション超過 | `count(deals WHERE next_action_at < 今日 AND is_open)` |
+| 入金期限超過 | `count(deals WHERE deal_progresses.payment_due_at < 今日 AND payment_status <> PAID)` |
+| 工事待ち | `count(deals WHERE deal_statuses.code = 'CONSTRUCTION_PENDING')` |
+
+金額は円未満を四捨五入する。`max(0, …)` があるため赤字案件ではコミッションが 0 になり、
+損失は会社残粗利にそのまま残る（営業・代理店へ転嫁しない）。
+
+原価・営業利益・会社残粗利・営業コミッションは `deal:compensation` を持つロールにのみ返す。
+代理店ロールには `営業利益合計` を `null` で返す（§17）。
+
 ## 5. LTV（§64–§66）
 
 ```

@@ -208,7 +208,128 @@ export async function seedMasters(prisma: PrismaClient = defaultPrisma) {
     partners[p.code] = row.id;
   }
 
-  return { organizationId, products, suppliers, plans, contractStatuses, upsellStatuses, boothTags, expenseCategories, accounting, partners };
+  // ── 信販会社（太陽光・蓄電池のローン。docs/15_DEAL_MANAGEMENT.md）──
+  const financeSeeds = [
+    { code: 'FIN_SHIGA', name: '滋賀銀行' },
+    { code: 'FIN_GUNMA', name: '群馬銀行' },
+    { code: 'FIN_ORICO', name: 'オリコ' },
+    { code: 'FIN_JACCS', name: 'ジャックス' },
+  ];
+  for (const f of financeSeeds) {
+    const row = await prisma.partner.upsert({
+      where: { organizationId_code: { organizationId, code: f.code } },
+      update: { name: f.name },
+      create: { organizationId, code: f.code, name: f.name, kinds: ['FINANCE'] },
+    });
+    partners[f.code] = row.id;
+  }
+
+  // ── 案件ステータス（docs/15_DEAL_MANAGEMENT.md 15.3）──
+  const dealStatusSeeds = [
+    { code: 'APPOINTMENT', label: 'アポ取得', stage: 'APPOINTMENT', isOpen: true, color: 'slate' },
+    { code: 'MEETING_SCHEDULED', label: '商談予定', stage: 'MEETING', isOpen: true, color: 'blue' },
+    { code: 'CANCELLED_BEFORE_MEETING', label: '商談前キャンセル', stage: 'LOST', isLost: true, color: 'slate' },
+    { code: 'PROPOSAL', label: '提案中', stage: 'PROPOSAL', isOpen: true, color: 'blue' },
+    { code: 'FO', label: 'FO', stage: 'LOST', isLost: true, color: 'slate' },
+    { code: 'CLO', label: 'CLO', stage: 'LOST', isLost: true, color: 'slate' },
+    { code: 'B', label: 'B', stage: 'LOST', isLost: true, color: 'red' },
+    { code: 'COOLING_OFF', label: 'クーリングオフ', stage: 'LOST', isLost: true, isContracted: true, color: 'red' },
+    { code: 'RE_MEETING', label: '再商談', stage: 'PROPOSAL', isOpen: true, color: 'amber' },
+    { code: 'CONTRACTED', label: '契約', stage: 'CONTRACT', isOpen: true, isContracted: true, color: 'green' },
+    { code: 'PRE_SCREENING', label: '仮審査中', stage: 'SCREENING', isOpen: true, isContracted: true, color: 'amber' },
+    { code: 'PRE_APPROVED', label: '仮審査済', stage: 'SCREENING', isOpen: true, isContracted: true, color: 'blue' },
+    { code: 'MAIN_SCREENING', label: '本審査中', stage: 'SCREENING', isOpen: true, isContracted: true, color: 'amber' },
+    { code: 'MAIN_APPROVED', label: '本審査済', stage: 'SCREENING', isOpen: true, isContracted: true, color: 'blue' },
+    { code: 'SURVEY_PENDING', label: '現調待ち', stage: 'SURVEY', isOpen: true, isContracted: true, color: 'amber' },
+    { code: 'CONSTRUCTION_PENDING', label: '工事待ち', stage: 'CONSTRUCTION', isOpen: true, isContracted: true, color: 'amber' },
+    { code: 'CONSTRUCTION_PARTIAL', label: '残工事', stage: 'CONSTRUCTION', isOpen: true, isContracted: true, color: 'amber' },
+    { code: 'COMPLETED', label: '完工', stage: 'COMPLETED', isWon: true, isContracted: true, color: 'green' },
+  ] as const;
+
+  const dealStatuses: Record<string, string> = {};
+  for (const [index, d] of dealStatusSeeds.entries()) {
+    const data = {
+      label: d.label,
+      stage: d.stage,
+      sortOrder: index + 1,
+      isOpen: 'isOpen' in d ? d.isOpen : false,
+      isContracted: 'isContracted' in d ? d.isContracted : false,
+      isWon: 'isWon' in d ? d.isWon : false,
+      isLost: 'isLost' in d ? d.isLost : false,
+      color: d.color,
+    };
+    const row = await prisma.dealStatus.upsert({
+      where: { organizationId_code: { organizationId, code: d.code } },
+      update: data,
+      create: { organizationId, code: d.code, ...data },
+    });
+    dealStatuses[d.code] = row.id;
+  }
+
+  // ── メーカー / 型式（太陽光パネル・蓄電池・給湯設備）──
+  const manufacturerSeeds = [
+    { code: 'MFR_CANADIAN', name: 'カナディアン', categories: ['PV', 'BATTERY'] as const },
+    { code: 'MFR_HANWHA', name: 'ハンファ', categories: ['PV'] as const },
+    { code: 'MFR_SHARP', name: 'SHARP', categories: ['PV', 'BATTERY'] as const },
+    { code: 'MFR_CHOSHU', name: '長州産業', categories: ['PV'] as const },
+    { code: 'MFR_PANASONIC', name: 'Panasonic', categories: ['BATTERY'] as const },
+    { code: 'MFR_OMRON', name: 'オムロン', categories: ['BATTERY'] as const },
+    { code: 'MFR_NICHICON', name: 'ニチコン', categories: ['BATTERY'] as const },
+    { code: 'MFR_KYOCERA', name: '京セラ', categories: ['BATTERY'] as const },
+    { code: 'MFR_DIAZEBRA', name: 'ダイヤゼブラ', categories: ['BATTERY'] as const },
+    { code: 'MFR_DAIKIN', name: 'ダイキン', categories: ['EQUIPMENT'] as const },
+    { code: 'MFR_CORONA', name: 'コロナ', categories: ['EQUIPMENT'] as const },
+  ];
+  const manufacturers: Record<string, string> = {};
+  for (const m of manufacturerSeeds) {
+    const row = await prisma.manufacturer.upsert({
+      where: { organizationId_code: { organizationId, code: m.code } },
+      update: { name: m.name, categories: [...m.categories] },
+      create: { organizationId, code: m.code, name: m.name, categories: [...m.categories] },
+    });
+    manufacturers[m.code] = row.id;
+  }
+
+  const batteryModelSeeds = [
+    { code: 'BT_EPCUBE_133', name: 'EP Cube 13.3', capacity: 13.3, manufacturer: 'MFR_CANADIAN' },
+    { code: 'BT_LJB1156', name: 'LJB1156', capacity: 11.2, manufacturer: 'MFR_PANASONIC' },
+    { code: 'BT_KPBU98BS', name: 'KP-BU98B-S', capacity: 9.8, manufacturer: 'MFR_OMRON' },
+    { code: 'BT_JHWB2021', name: 'JH-WB2021', capacity: 9.5, manufacturer: 'MFR_SHARP' },
+    { code: 'BT_ESST3X1', name: 'ESS-T3X1', capacity: 14.9, manufacturer: 'MFR_NICHICON' },
+    { code: 'BT_ENEREZZA2', name: 'Enerezza Plus 2', capacity: 17.1, manufacturer: 'MFR_KYOCERA' },
+    { code: 'BT_EOFLB70TK', name: 'EOF-LB70-TK', capacity: 7.04, manufacturer: 'MFR_DIAZEBRA' },
+  ];
+  const batteryModels: Record<string, string> = {};
+  for (const m of batteryModelSeeds) {
+    const data = {
+      name: m.name,
+      capacity: m.capacity,
+      category: 'BATTERY' as const,
+      manufacturerId: manufacturers[m.manufacturer] ?? null,
+    };
+    const row = await prisma.equipmentModel.upsert({
+      where: { organizationId_code: { organizationId, code: m.code } },
+      update: data,
+      create: { organizationId, code: m.code, ...data },
+    });
+    batteryModels[m.code] = row.id;
+  }
+
+  return {
+    organizationId,
+    products,
+    suppliers,
+    plans,
+    contractStatuses,
+    upsellStatuses,
+    boothTags,
+    expenseCategories,
+    accounting,
+    partners,
+    dealStatuses,
+    manufacturers,
+    batteryModels,
+  };
 }
 
 export type Masters = Awaited<ReturnType<typeof seedMasters>>;

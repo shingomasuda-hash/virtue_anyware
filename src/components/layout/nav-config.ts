@@ -32,6 +32,13 @@ export const HQ_NAV: NavSection[] = [
     ],
   },
   {
+    title: '案件（太陽光・蓄電池）',
+    items: [
+      { label: '案件', href: '/deals', permission: 'deal:read' },
+      { label: 'ファネル', href: '/deals/pipeline', permission: 'deal:read' },
+    ],
+  },
+  {
     title: 'CRM',
     items: [
       { label: 'アップセル', href: '/upsell', permission: 'upsell:read', comingSoon: true, badge: 'P5' },
@@ -85,6 +92,7 @@ export const AGENCY_NAV: NavSection[] = [
       { label: 'ダッシュボード', href: '/agency/dashboard' },
       { label: '顧客', href: '/agency/customers', permission: 'customer:read' },
       { label: '契約', href: '/agency/contracts', permission: 'contract:read' },
+      { label: '案件（太陽光・蓄電池）', href: '/agency/deals', permission: 'deal:read' },
       { label: '売上/精算', href: '/agency/settlements', permission: 'settlement:read', comingSoon: true, badge: 'P6' },
       { label: 'スタッフ', href: '/agency/staff', permission: 'agency:read', comingSoon: true, badge: 'P7' },
       { label: 'アカウント設定', href: '/agency/account' },

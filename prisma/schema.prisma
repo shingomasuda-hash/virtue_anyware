@@ -194,6 +194,8 @@ enum PartnerKind {
   TOSSUP
   VENDOR
   SUPPLIER
+  /// 信販会社（太陽光・蓄電池のローン）
+  FINANCE
   OTHER
 }
 
@@ -261,6 +263,8 @@ enum PaymentMethod {
   CASH
   CREDIT_CARD
   E_MONEY
+  /// 信販（ローン）
+  INSTALLMENT
   OTHER
 }
 
@@ -268,6 +272,110 @@ enum RevenueSourceType {
   CONTRACT
   TOSSUP
   OTHER
+}
+
+// ─────────────────────────────────────────────────────────────
+// 案件管理（太陽光・蓄電池）docs/15_DEAL_MANAGEMENT.md
+// ─────────────────────────────────────────────────────────────
+
+/// 案件ステータスの大分類。集計とファネル表示に使う。
+enum DealStage {
+  APPOINTMENT
+  MEETING
+  PROPOSAL
+  CONTRACT
+  SCREENING
+  SURVEY
+  CONSTRUCTION
+  COMPLETED
+  LOST
+}
+
+/// 商材。1 案件で複数を組み合わせる（PV.BT.EQ 等）。
+enum DealProductType {
+  PV
+  BT
+  EQ
+  IH
+}
+
+enum DealPriority {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+/// 進捗の汎用状態（書類・完工確認・系統連系）。
+enum ProgressState {
+  NOT_STARTED
+  IN_PROGRESS
+  DONE
+  NOT_REQUIRED
+}
+
+/// ローン審査。仮審査 → 本審査の段階を持つため汎用状態と分ける。
+enum LoanReviewState {
+  NOT_STARTED
+  IN_PROGRESS
+  PRE_APPROVED
+  MAIN_SCREENING
+  MAIN_APPROVED
+  REJECTED
+  NOT_REQUIRED
+}
+
+enum SiteSurveyState {
+  NOT_STARTED
+  SCHEDULING
+  SCHEDULED
+  DONE
+  NOT_REQUIRED
+}
+
+enum SubsidyState {
+  NOT_REQUIRED
+  CHECKING
+  PLANNED
+  APPLIED
+  APPROVED
+  REJECTED
+}
+
+enum ConstructionState {
+  NOT_STARTED
+  ARRANGING
+  ARRANGED
+  IN_PROGRESS
+  DONE
+}
+
+/// 顧客からの入金状況。
+enum DealPaymentStatus {
+  PENDING
+  PARTIAL
+  PAID
+}
+
+/// 営業・代理店へのコミッション支払状況。
+enum CompensationPaymentStatus {
+  PENDING
+  PAID
+  ON_HOLD
+}
+
+enum ManufacturerCategory {
+  PV
+  BATTERY
+  EQUIPMENT
+  OTHER
+}
+
+enum DealActivityType {
+  STATUS_CHANGE
+  MEMO
+  VISIT
+  CALL
+  PROGRESS_UPDATE
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -310,6 +418,10 @@ model Organization {
   costAllocations  CostAllocation[]
   seasonalCoefficients SeasonalCoefficient[]
   clawbacks        Clawback[]
+  dealStatuses     DealStatus[]
+  deals            Deal[]
+  manufacturers    Manufacturer[]
+  equipmentModels  EquipmentModel[]
 
   @@map("organizations")
 }
@@ -350,6 +462,7 @@ model User {
   expensesPaid        Expense[]           @relation("ExpensePayer")
   expenseApprovals    ExpenseApproval[]
   snapshotsCreated    ContractPricingSnapshot[] @relation("SnapshotCreator")
+  dealActivities      DealActivity[]
 
   @@index([organizationId, role])
   @@index([agencyId])
@@ -457,6 +570,7 @@ model Agency {
   revenues     Revenue[]
   importBatches ImportBatch[]
   clawbacks    Clawback[]
+  deals        Deal[]
 
   @@unique([organizationId, code])
   @@index([organizationId, status])
@@ -739,6 +853,10 @@ model Customer {
   sourceBoothId      String?
   acquiredAt         DateTime?
   notes              String?
+  /// 契約書・重要事項・施工写真をまとめた Google Drive フォルダの URL（実体は持たない。ASSUMPTIONS D2-8）
+  driveFolderUrl     String?
+  /// 登録した事務担当者の表示名（ユーザー未登録の担当者も記録できるよう文字列で持つ）
+  registeredByName   String?
   createdByBatchId   String?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
@@ -754,6 +872,7 @@ model Customer {
   activities  CustomerActivity[]
   upsellLeads UpsellLead[]
   revenues    Revenue[]
+  deals       Deal[]
 
   @@index([organizationId, agencyId])
   @@index([organizationId, phoneNormalized])
@@ -987,6 +1106,7 @@ model Partner {
   expenses     Expense[]
   invoices     Invoice[]
   payables     Payable[]
+  financedDeals Deal[]      @relation("DealFinanceCompany")
 
   @@unique([organizationId, code])
   @@map("partners")
@@ -1215,6 +1335,8 @@ model Staff {
   contracts     Contract[]
   expenses      Expense[]
   revenues      Revenue[]
+  closerDeals   Deal[]              @relation("DealCloser")
+  appointerDeals Deal[]             @relation("DealAppointer")
 
   @@unique([organizationId, code])
   @@index([organizationId, agencyId])
@@ -1762,4 +1884,251 @@ model AuditLog {
   @@index([entity, entityId])
   @@index([actorUserId, createdAt])
   @@map("audit_logs")
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// 案件管理（太陽光・蓄電池）docs/15_DEAL_MANAGEMENT.md
+// ─────────────────────────────────────────────────────────────
+
+/// メーカーマスタ（太陽光パネル / 蓄電池 / 給湯設備等）。
+model Manufacturer {
+  id             String                 @id @default(cuid())
+  organizationId String
+  code           String
+  name           String
+  categories     ManufacturerCategory[]
+  status         RecordStatus           @default(ACTIVE)
+  notes          String?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  models       EquipmentModel[]
+
+  pvDeals        Deal[] @relation("DealPvManufacturer")
+  batteryDeals   Deal[] @relation("DealBatteryManufacturer")
+  equipmentDeals Deal[] @relation("DealEquipmentManufacturer")
+
+  @@unique([organizationId, code])
+  @@map("manufacturers")
+}
+
+/// 型式マスタ。蓄電池の型式と容量(kWh)の対応を保持する。
+model EquipmentModel {
+  id             String               @id @default(cuid())
+  organizationId String
+  manufacturerId String?
+  category       ManufacturerCategory @default(BATTERY)
+  code           String
+  name           String
+  /// 蓄電池なら容量(kWh)。太陽光パネルなら出力(kW)。
+  capacity       Decimal?             @db.Decimal(8, 3)
+  isActive       Boolean              @default(true)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  manufacturer Manufacturer? @relation(fields: [manufacturerId], references: [id], onDelete: SetNull)
+
+  batteryDeals Deal[] @relation("DealBatteryModel")
+
+  @@unique([organizationId, code])
+  @@index([organizationId, category])
+  @@map("equipment_models")
+}
+
+/// 案件ステータスマスタ。業務側で増減しうるため enum にしない（contract_statuses と同方針）。
+model DealStatus {
+  id             String    @id @default(cuid())
+  organizationId String
+  code           String
+  label          String
+  sortOrder      Int       @default(0)
+  stage          DealStage @default(APPOINTMENT)
+  /// 進行中案件としてカウントするか
+  isOpen         Boolean   @default(true)
+  /// 契約日が入る段階か（契約以降）
+  isContracted   Boolean   @default(false)
+  /// 完工＝成約完了
+  isWon          Boolean   @default(false)
+  /// 失注・解約
+  isLost         Boolean   @default(false)
+  color          String    @default("slate")
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  deals        Deal[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId, sortOrder])
+  @@map("deal_statuses")
+}
+
+/// 案件。電力契約（contracts）とは商流・金額の決まり方が違うため別エンティティにする。
+model Deal {
+  id             String @id @default(cuid())
+  organizationId String
+  /// 代理店。NULL は自社直販（ASSUMPTIONS D2-3）
+  agencyId       String?
+  customerId     String
+  /// 業務上の案件ID（A0001 等）。組織内で一意
+  code           String
+  statusId       String
+
+  /// CL = クロージング担当
+  closerStaffId    String?
+  /// AP = アポイント担当
+  appointerStaffId String?
+
+  productTypes DealProductType[]
+
+  pvManufacturerId     String?
+  pvCapacityKw         Decimal? @db.Decimal(8, 3)
+  batteryManufacturerId String?
+  batteryModelId       String?
+  batteryCapacityKwh   Decimal? @db.Decimal(8, 3)
+  equipmentManufacturerId String?
+
+  /// 商談日
+  metAt        DateTime? @db.Date
+  contractedAt DateTime? @db.Date
+
+  /// 販売価格（税抜）。単価マスタではなく案件ごとに決まる
+  salesPriceExclTax Decimal? @db.Decimal(18, 2)
+  paymentMethod     PaymentMethod?
+  financeCompanyId  String?
+
+  lostReason   String?
+  nextActionAt DateTime?    @db.Date
+  priority     DealPriority @default(MEDIUM)
+  notes        String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  agency       Agency?      @relation(fields: [agencyId], references: [id], onDelete: SetNull)
+  customer     Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  status       DealStatus   @relation(fields: [statusId], references: [id])
+  closer       Staff?       @relation("DealCloser", fields: [closerStaffId], references: [id], onDelete: SetNull)
+  appointer    Staff?       @relation("DealAppointer", fields: [appointerStaffId], references: [id], onDelete: SetNull)
+
+  pvManufacturer        Manufacturer?   @relation("DealPvManufacturer", fields: [pvManufacturerId], references: [id], onDelete: SetNull)
+  batteryManufacturer   Manufacturer?   @relation("DealBatteryManufacturer", fields: [batteryManufacturerId], references: [id], onDelete: SetNull)
+  equipmentManufacturer Manufacturer?   @relation("DealEquipmentManufacturer", fields: [equipmentManufacturerId], references: [id], onDelete: SetNull)
+  batteryModel          EquipmentModel? @relation("DealBatteryModel", fields: [batteryModelId], references: [id], onDelete: SetNull)
+  financeCompany        Partner?        @relation("DealFinanceCompany", fields: [financeCompanyId], references: [id], onDelete: SetNull)
+
+  progress     DealProgress?
+  compensation DealCompensation?
+  activities   DealActivity[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId, agencyId, contractedAt])
+  @@index([organizationId, statusId])
+  @@index([organizationId, nextActionAt])
+  @@index([customerId])
+  @@map("deals")
+}
+
+/// 契約後の進捗。項目ごとに取りうる値が違うため列ごとに enum を分ける（ASSUMPTIONS D2-7）。
+model DealProgress {
+  id     String @id @default(cuid())
+  dealId String @unique
+
+  loanReview LoanReviewState @default(NOT_STARTED)
+
+  siteSurvey   SiteSurveyState @default(NOT_STARTED)
+  siteSurveyAt DateTime?       @db.Date
+
+  subsidy           SubsidyState @default(NOT_REQUIRED)
+  subsidyProgram    String?
+  subsidyAppliedAt  DateTime?    @db.Date
+  subsidyApprovedAt DateTime?    @db.Date
+
+  construction            ConstructionState @default(NOT_STARTED)
+  constructionScheduledAt DateTime?         @db.Date
+  constructionCompletedAt DateTime?         @db.Date
+
+  completionCheck ProgressState @default(NOT_STARTED)
+
+  paymentDueAt  DateTime?         @db.Date
+  paidAt        DateTime?         @db.Date
+  paymentStatus DealPaymentStatus @default(PENDING)
+
+  contractDocument ProgressState @default(NOT_STARTED)
+  importantMatters ProgressState @default(NOT_STARTED)
+  warranty         ProgressState @default(NOT_STARTED)
+  sitePhotos       ProgressState @default(NOT_STARTED)
+  gridConnection   ProgressState @default(NOT_STARTED)
+
+  attention String?
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+
+  deal Deal @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  @@index([paymentStatus, paymentDueAt])
+  @@map("deal_progresses")
+}
+
+/// 報酬（コミッション）。入力は原価・控除額・率だけで、金額は計算結果を保存する。
+/// 率や控除額の運用が変わっても過去の支払額が動かないようにするため（§6 と同方針、ASSUMPTIONS D2-5）。
+model DealCompensation {
+  id     String @id @default(cuid())
+  dealId String @unique
+
+  // ── 入力 ──
+  equipmentCost         Decimal @default(0) @db.Decimal(18, 2)
+  constructionCost      Decimal @default(0) @db.Decimal(18, 2)
+  extendedWarrantyCost  Decimal @default(0) @db.Decimal(18, 2)
+  otherCost             Decimal @default(0) @db.Decimal(18, 2)
+  deductionAmount       Decimal @default(0) @db.Decimal(18, 2)
+  salesCommissionRate   Decimal @default(0) @db.Decimal(9, 6)
+  agencyCommissionRate  Decimal @default(0) @db.Decimal(9, 6)
+
+  // ── 計算結果のスナップショット ──
+  totalCost          Decimal @default(0) @db.Decimal(18, 2)
+  grossProfit        Decimal @default(0) @db.Decimal(18, 2)
+  /// max(0, 営業利益 − 控除額)
+  commissionBase     Decimal @default(0) @db.Decimal(18, 2)
+  salesCommission    Decimal @default(0) @db.Decimal(18, 2)
+  agencyCommission   Decimal @default(0) @db.Decimal(18, 2)
+  companyGrossProfit Decimal @default(0) @db.Decimal(18, 2)
+  calculatedAt       DateTime?
+
+  paymentDueAt  DateTime?                 @db.Date
+  paidAt        DateTime?                 @db.Date
+  paymentStatus CompensationPaymentStatus @default(PENDING)
+  notes         String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  deal Deal @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  @@index([paymentStatus, paymentDueAt])
+  @@map("deal_compensations")
+}
+
+/// 案件の対応履歴。ステータス変更も 1 行として残す。
+model DealActivity {
+  id       String           @id @default(cuid())
+  dealId   String
+  type     DealActivityType
+  userId   String?
+  fromStatusId String?
+  toStatusId   String?
+  memo     String?
+  occurredAt DateTime       @default(now())
+
+  deal Deal  @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([dealId, occurredAt])
+  @@map("deal_activities")
 }

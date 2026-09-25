@@ -28,6 +28,10 @@ export const PERMISSIONS = [
   'event:write',
   'upsell:read',
   'upsell:write',
+  'deal:read',
+  'deal:write',
+  'deal:progress',
+  'deal:compensation',
   'report:read',
   'audit:read',
   'export:csv',
@@ -50,6 +54,9 @@ const HQ_STAFF_PERMISSIONS: readonly Permission[] = [
   'event:read',
   'upsell:read',
   'upsell:write',
+  'deal:read',
+  'deal:write',
+  'deal:progress',
   'report:read',
 ];
 
@@ -63,6 +70,8 @@ const HQ_ADMIN_PERMISSIONS: readonly Permission[] = [
   'settlement:write',
   'expense:approve',
   'event:write',
+  // 報酬（原価・営業利益・会社残粗利）は本部管理者のみ（§17 / docs/15_DEAL_MANAGEMENT.md 15.5）
+  'deal:compensation',
   'audit:read',
   'export:csv',
 ];
@@ -76,6 +85,9 @@ const AGENCY_ADMIN_PERMISSIONS: readonly Permission[] = [
   'customer:read',
   'customer:write',
   'contract:read',
+  // 案件の登録・進捗更新は当面本部のみ（contract:write と同じ扱い）。
+  // 代理店向けの入力画面を用意する段階で deal:write / deal:progress を付与する。
+  'deal:read',
   'finance:agencyPayout',
   'settlement:read',
   'expense:read',
@@ -89,6 +101,7 @@ const AGENCY_STAFF_PERMISSIONS: readonly Permission[] = [
   'customer:read',
   'customer:write',
   'contract:read',
+  'deal:read',
   'event:read',
 ];
 

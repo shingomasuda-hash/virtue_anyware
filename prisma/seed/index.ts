@@ -2,6 +2,7 @@ import { prisma } from './client.js';
 import { seedMasters } from './masters.js';
 import { seedDemo } from './demo.js';
 import { seedEvergreenConditions } from './evergreen.js';
+import { seedDeals } from './deals.js';
 import { DEMO_PASSWORD, DEMO_PASSWORD_GENERATED } from './users.js';
 import { assertSeedAllowed } from './guard.js';
 
@@ -26,6 +27,9 @@ async function main() {
     });
   }
 
+  console.log('▶ 案件管理（太陽光・蓄電池）のデモデータを投入します…');
+  const deals = await seedDeals(masters);
+
   const [customers, contracts, leads] = await Promise.all([
     prisma.customer.count(),
     prisma.contract.count(),
@@ -35,6 +39,7 @@ async function main() {
   console.log('\n✅ シード完了');
   console.log(`   代理店: ${demo.agencies.length} 社 / 催事: ${demo.events.length} 件`);
   console.log(`   顧客: ${customers} 名 / 契約: ${contracts} 件 / アップセル: ${leads} 件`);
+  console.log(`   案件: ${deals.deals} 件（進捗 ${deals.progress} 件 / 報酬 ${deals.compensations} 件）`);
   console.log('\n   テストユーザー（開発・検証専用。本番では使用しないこと）');
   console.log(`   パスワード: ${DEMO_PASSWORD}${DEMO_PASSWORD_GENERATED ? '  ← ランダム生成（この表示を控えてください）' : ''}`);
   console.log('   - superadmin@virtue.example.jp   システム管理者');
