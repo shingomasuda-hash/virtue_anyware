@@ -24,6 +24,13 @@ function asNumber(value: string | number | null): number {
   return typeof value === 'number' ? value : Number(value ?? 0) || 0;
 }
 
+/** 未入力を 0 に潰さない数値変換。金額・年月のように 0 と空欄の意味が違う項目に使う。 */
+function asNullableNumber(value: string | number | null | undefined): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
 /**
  * 取込を確定する（STEP6）。
  *
@@ -159,6 +166,8 @@ async function applyRow(tx: TxClient, ctx: AccessContext, batchId: string, row: 
     name: asString(v.customerName ?? null) ?? '（氏名なし）',
     nameKana: asString(v.customerNameKana ?? null),
     phone: asString(v.phone ?? null),
+    mobilePhone: asString(v.mobilePhone ?? null),
+    contactPersonName: asString(v.contactPersonName ?? null),
     email: asString(v.email ?? null),
     postalCode: asString(v.postalCode ?? null),
     prefecture: asString(v.prefecture ?? null),
@@ -210,6 +219,13 @@ async function applyRow(tx: TxClient, ctx: AccessContext, batchId: string, row: 
     usageMonth: row.resolved.usageMonth,
     hasStatement: row.resolved.hasStatement,
     isMatchingConfirmed: row.resolved.isMatchingConfirmed,
+    usageAmountYen: asNullableNumber(v.usageAmountYen),
+    matchedAt: asDate(v.matchedAt ?? null),
+    matchingMonth: asNullableNumber(v.matchingMonth),
+    documentMailStatus: asString(v.documentMailStatus ?? null),
+    followUpStatus: asString(v.followUpStatus ?? null),
+    areaName: asString(v.areaName ?? null),
+    paymentMethodLabel: asString(v.paymentMethodLabel ?? null),
     statusId: row.resolved.statusId ?? '',
     appliedAt: asDate(v.appliedAt ?? null),
     contractedAt: asDate(v.contractedAt ?? null),

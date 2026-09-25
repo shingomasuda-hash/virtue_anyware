@@ -16,6 +16,8 @@ export interface CustomerWriteInput {
   name: string;
   nameKana?: string | null;
   phone?: string | null;
+  mobilePhone?: string | null;
+  contactPersonName?: string | null;
   email?: string | null;
   postalCode?: string | null;
   prefecture?: string | null;
@@ -83,7 +85,8 @@ export async function createCustomer(
   const db = options.db ?? prisma;
   const organizationId = resolveOrganizationId(ctx);
   const agencyId = resolveWritableAgencyId(ctx, input.agencyId ?? null);
-  const phone = input.phone?.trim() || null;
+  // 固定電話が空でも携帯があれば主電話として扱う。重複判定キー 3（電話+氏名）を失わないため。
+  const phone = input.phone?.trim() || input.mobilePhone?.trim() || null;
 
   const customer = await db.customer.create({
     data: {
@@ -94,6 +97,8 @@ export async function createCustomer(
       nameKana: input.nameKana?.trim() || null,
       phone,
       phoneNormalized: normalizePhone(phone),
+      mobilePhone: input.mobilePhone?.trim() || null,
+      contactPersonName: input.contactPersonName?.trim() || null,
       email: input.email?.trim() || null,
       postalCode: input.postalCode?.trim() || null,
       prefecture: input.prefecture?.trim() || null,
@@ -148,6 +153,9 @@ export async function updateCustomer(
       nameKana: input.nameKana === undefined ? undefined : (input.nameKana?.trim() || null),
       phone,
       phoneNormalized: normalizePhone(phone),
+      mobilePhone: input.mobilePhone === undefined ? undefined : (input.mobilePhone?.trim() || null),
+      contactPersonName:
+        input.contactPersonName === undefined ? undefined : (input.contactPersonName?.trim() || null),
       email: input.email === undefined ? undefined : (input.email?.trim() || null),
       postalCode: input.postalCode === undefined ? undefined : (input.postalCode?.trim() || null),
       prefecture: input.prefecture === undefined ? undefined : (input.prefecture?.trim() || null),

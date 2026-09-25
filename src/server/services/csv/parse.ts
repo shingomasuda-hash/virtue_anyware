@@ -18,10 +18,24 @@ export interface ParsedCsv {
 /** STEP2: CSV 解析。DB へは一切書き込まない。 */
 export function parseCsv(buffer: Uint8Array, encoding?: CsvEncoding | 'auto'): ParsedCsv {
   const decoded = decodeCsv(buffer, encoding);
+
+  /**
+   * 同名の列に連番を付ける。
+   *
+   * 実データには「別途」が 2 列あり、そのままだと後の列が前の列を上書きして
+   * 先の列の値が**黙って失われる**（Papa Parse は header:true のときキーを
+   * オブジェクトのプロパティにするため）。列名を一意にして両方を保持する。
+   */
+  const seen = new Map<string, number>();
   const result = Papa.parse<Record<string, string>>(decoded.text.trim(), {
     header: true,
     skipEmptyLines: 'greedy',
-    transformHeader: (h) => h.trim().replace(/^﻿/, ''),
+    transformHeader: (h) => {
+      const base = h.trim().replace(/^﻿/, '');
+      const count = (seen.get(base) ?? 0) + 1;
+      seen.set(base, count);
+      return count === 1 ? base : `${base} (${count})`;
+    },
   });
 
   const headers = result.meta.fields ?? [];

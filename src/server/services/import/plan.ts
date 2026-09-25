@@ -1,5 +1,5 @@
 import { prisma } from '@/server/db';
-import type { AccessContext } from '@/server/authz/context';
+import { isAgencyScoped, type AccessContext } from '@/server/authz/context';
 import { agencyScope, orgScope, resolveWritableAgencyId } from '@/server/authz/scope';
 import { normalizeRows } from '@/server/services/csv/parse';
 import {
@@ -10,7 +10,7 @@ import {
   phoneNameKey,
   type ExistingIndex,
 } from '@/server/services/csv/dedupe';
-import { normalizeHeader } from '@/server/services/csv/field-catalog';
+import { isDirectSalesLabel, normalizeHeader } from '@/server/services/csv/field-catalog';
 import { resolveAgencyPayoutPrice } from '@/server/services/pricing/resolve';
 import { DomainError } from '@/lib/errors';
 import { validateRow } from './validate';
@@ -181,13 +181,23 @@ export async function planImport(ctx: AccessContext, batchId: string): Promise<I
     // ── 参照の解決 ──
     const agencyRaw = typeof values.agencyCode === 'string' ? values.agencyCode : null;
     const agencyMatch = agencyRaw ? (agencyLookup.get(normalizeHeader(agencyRaw)) ?? null) : null;
+    // 「直営」「自社」等は代理店ではなく本部直販。代理店マスタに無いのが正しい。
+    const directSales = agencyRaw !== null && agencyMatch === null && isDirectSalesLabel(agencyRaw);
     let agencyId = options.fixedAgencyId ?? agencyMatch?.id ?? null;
-    // 代理店ユーザーは自社へ強制する（CSV に他代理店が書かれていても従わない）
-    try {
-      agencyId = resolveWritableAgencyId(ctx, agencyId);
-    } catch {
-      issues.push({ level: 'error', field: 'agencyCode', message: '自社以外の代理店データは取り込めません。' });
-      agencyId = ctx.agencyId;
+
+    if (directSales && isAgencyScoped(ctx)) {
+      // 代理店ユーザーが直営案件を自社案件として取り込めてしまわないようにする
+      issues.push({ level: 'error', field: 'agencyCode', message: '直営（本部直販）の行は代理店ユーザーからは取り込めません。' });
+    } else if (directSales) {
+      agencyId = null;
+    } else {
+      // 代理店ユーザーは自社へ強制する（CSV に他代理店が書かれていても従わない）
+      try {
+        agencyId = resolveWritableAgencyId(ctx, agencyId);
+      } catch {
+        issues.push({ level: 'error', field: 'agencyCode', message: '自社以外の代理店データは取り込めません。' });
+        agencyId = ctx.agencyId;
+      }
     }
 
     const statusRaw = typeof values.statusCode === 'string' ? values.statusCode : null;
@@ -219,6 +229,7 @@ export async function planImport(ctx: AccessContext, batchId: string): Promise<I
         unknownAgencyLevel: options.unknownAgency,
         statusId: status?.id ?? null,
         statusRawValue: statusRaw,
+        directSales,
         masterUnitPrice: await masterUnitPrice(agencyId, basisDate),
         // 明細の提出がない案件は定額手数料になるため、数量が無くても取り込める
         requiresQuantity: parseBooleanish(values.hasStatement, true),
@@ -227,7 +238,10 @@ export async function planImport(ctx: AccessContext, batchId: string): Promise<I
 
     // ── 重複判定 ──
     const contractNumber = typeof values.contractNumber === 'string' ? values.contractNumber : null;
-    const phoneNormalized = typeof values.phone === 'string' ? values.phone : null;
+    // 固定電話が空でも携帯があれば重複判定に使う（実データは列の使い方が揺れている）
+    const phoneNormalized =
+      (typeof values.phone === 'string' ? values.phone : null) ??
+      (typeof values.mobilePhone === 'string' ? values.mobilePhone : null);
     const name = typeof values.customerName === 'string' ? values.customerName : null;
 
     const dedupe = decideDuplicate(
@@ -290,7 +304,10 @@ export async function planImport(ctx: AccessContext, batchId: string): Promise<I
       contractId: dedupe.contractId,
       resolved: {
         agencyId,
-        agencyLabel: agencyMatch?.name ?? (agencyId ? (agencies.find((a) => a.id === agencyId)?.name ?? null) : null),
+        directSales,
+        agencyLabel: directSales
+          ? '直営（本部直販）'
+          : (agencyMatch?.name ?? (agencyId ? (agencies.find((a) => a.id === agencyId)?.name ?? null) : null)),
         statusId: status?.id ?? null,
         statusLabel: status?.label ?? null,
         supplierId: supplierRaw ? (supplierLookup.get(normalizeHeader(supplierRaw))?.id ?? null) : null,

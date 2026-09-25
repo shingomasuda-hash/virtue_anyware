@@ -13,6 +13,8 @@ export interface ValidationContext {
   agencyId: string | null;
   agencyRawValue: string | null;
   unknownAgencyLevel: 'error' | 'warning';
+  /** 「直営」等で本部直販として扱う行。代理店が無いことは正常。 */
+  directSales: boolean;
   statusId: string | null;
   statusRawValue: string | null;
   /** マスタから解決した単価。CSV の単価と突き合わせる。 */
@@ -123,7 +125,8 @@ export function validateRow(
   }
 
   // ── 代理店 ──
-  if (!ctx.agencyId) {
+  // 直営（本部直販）は代理店を持たないのが正しいため、未解決として扱わない
+  if (!ctx.agencyId && !ctx.directSales) {
     issues.push({
       level: ctx.unknownAgencyLevel,
       field: 'agencyCode',

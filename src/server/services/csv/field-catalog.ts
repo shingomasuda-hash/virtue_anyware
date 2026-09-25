@@ -21,13 +21,27 @@ export const FIELD_CATALOG: readonly FieldDefinition[] = [
   { key: 'externalCustomerId', label: '顧客ID', type: 'string', target: 'customer',
     aliases: ['顧客ID', '顧客番号', 'お客様番号', 'customerId', 'customer_id', 'customerNo'] },
   { key: 'contractNumber', label: '契約番号', type: 'string', target: 'contract',
-    aliases: ['契約番号', '申込番号', '受付番号', '契約No', 'contractNumber', 'contract_no', 'contractNo'] },
+    aliases: ['契約番号', '申込番号', '受付番号', '契約No', '管理番号', '管理No', 'contractNumber', 'contract_no', 'contractNo'] },
   { key: 'customerName', label: '氏名', type: 'string', target: 'customer', required: true,
     aliases: ['氏名', '顧客名', '契約者名', 'お名前', '名前', 'customerName', 'customer_name', 'name', 'NAME'] },
   { key: 'customerNameKana', label: '氏名カナ', type: 'string', target: 'customer',
-    aliases: ['氏名カナ', 'フリガナ', 'ふりがな', 'カナ', 'カナ氏名', 'customerNameKana', 'kana'] },
+    aliases: [
+      '氏名カナ', 'フリガナ', 'ふりがな', 'カナ', 'カナ氏名', '名義カナ',
+      '代表者名フリ', '代表者名フリガナ', '契約者名カナ',
+      'customerNameKana', 'kana',
+    ] },
+  // 実データでは「固定電話番号」列に携帯番号が入っていることがある。
+  // どちらの列名でも主電話として取り込み、携帯番号列は mobilePhone として別に保持する。
   { key: 'phone', label: '電話番号', type: 'phone', target: 'customer',
-    aliases: ['電話番号', '電話', 'TEL', 'tel', '連絡先', '携帯番号', 'phone', 'phoneNumber'] },
+    aliases: [
+      '電話番号', '電話', 'TEL', 'tel', '連絡先', '電話番号1',
+      '固定電話番号', '固定電話', '自宅電話', '自宅電話番号',
+      'phone', 'phoneNumber',
+    ] },
+  { key: 'mobilePhone', label: '携帯番号', type: 'phone', target: 'customer',
+    aliases: ['携帯番号', '携帯電話', '携帯電話番号', '携帯', 'mobile', 'mobilePhone', 'mobile_phone'] },
+  { key: 'contactPersonName', label: '担当者名（顧客側）', type: 'string', target: 'customer',
+    aliases: ['担当者名', '顧客担当者', '窓口担当者', 'contactPerson', 'contactPersonName'] },
   { key: 'email', label: 'メール', type: 'email', target: 'customer',
     aliases: ['メール', 'メールアドレス', 'Email', 'email', 'mail'] },
   { key: 'postalCode', label: '郵便番号', type: 'postal', target: 'customer',
@@ -35,23 +49,26 @@ export const FIELD_CATALOG: readonly FieldDefinition[] = [
   { key: 'prefecture', label: '都道府県', type: 'string', target: 'customer',
     aliases: ['都道府県', '県', 'prefecture', 'pref'] },
   { key: 'city', label: '市区町村', type: 'string', target: 'customer',
-    aliases: ['市区町村', '市町村', 'city'] },
+    aliases: ['市区町村', '市町村', '市区郡', '市区町村郡', 'city'] },
   { key: 'address', label: '住所', type: 'string', target: 'customer',
-    aliases: ['住所', '番地', '住所1', 'address', 'address1'] },
+    aliases: ['住所', '番地', '住所1', '町域以降', '町名番地', '以降の住所', 'address', 'address1'] },
   { key: 'building', label: '建物名', type: 'string', target: 'customer',
     aliases: ['建物名', 'マンション名', '建物', '住所2', 'building', 'address2'] },
   { key: 'birthDate', label: '生年月日', type: 'date', target: 'customer',
-    aliases: ['生年月日', '誕生日', 'birthDate', 'birth_date', 'birthday'] },
+    aliases: ['生年月日', '誕生日', '代表生年月日', '契約者生年月日', 'birthDate', 'birth_date', 'birthday'] },
   { key: 'contractedAt', label: '契約日', type: 'date', target: 'contract',
     aliases: ['契約日', '成約日', 'contractDate', 'contract_date', 'contractedAt'] },
   { key: 'appliedAt', label: '申込日', type: 'date', target: 'contract',
-    aliases: ['申込日', '受付日', 'applyDate', 'applied_at', 'appliedAt'] },
+    aliases: ['申込日', '受付日', 'WEB入力日', 'Web入力日', 'web入力日', '入力日', 'applyDate', 'applied_at', 'appliedAt'] },
   { key: 'activatedAt', label: '開通日', type: 'date', target: 'contract',
-    aliases: ['開通日', '供給開始日', '利用開始日', 'activatedAt', 'activated_at'] },
+    aliases: [
+      '開通日', '供給開始日', '利用開始日', 'スイッチング日', 'スイッチング', '切替日', '切り替え日',
+      'activatedAt', 'activated_at', 'switchingDate',
+    ] },
   { key: 'supplierName', label: '電力会社', type: 'string', target: 'contract',
     aliases: ['電力会社', '供給会社', '新電力', 'supplier', 'powerCompany', 'power_company'] },
   { key: 'planName', label: '契約プラン', type: 'string', target: 'contract',
-    aliases: ['契約プラン', 'プラン', 'プラン名', 'plan', 'planName', 'contractPlan'] },
+    aliases: ['契約プラン', 'プラン', 'プラン名', '種別', '契約種別', '料金種別', 'plan', 'planName', 'contractPlan'] },
   { key: 'contractWatt', label: '契約ワット数', type: 'number', target: 'contract',
     aliases: [
       '契約ワット数', 'ワット数', 'W数', 'W', 'ワット', 'watt', 'contractWatt', 'contract_watt',
@@ -64,8 +81,12 @@ export const FIELD_CATALOG: readonly FieldDefinition[] = [
   { key: 'actualUsageKwh', label: '使用量(kWh)', type: 'number', target: 'contract',
     aliases: [
       '使用量', '使用量(kWh)', '実使用量', '電気使用量', '月間使用量', '検針使用量',
+      // 実データの「指数込み使用量」は検針指数から求めた実使用量として扱う（ASSUMPTIONS E-1）
+      '指数込み使用量', '指数込使用量', '指数込み',
       'kWh', 'usage', 'usageKwh', 'usage_kwh', 'actualUsageKwh',
     ] },
+  { key: 'usageAmountYen', label: '電気料金', type: 'number', target: 'contract',
+    aliases: ['利用料金', '電気料金', '請求金額', '請求額', 'usageAmount', 'usageAmountYen'] },
   { key: 'usageMonth', label: '検針月', type: 'number', target: 'contract',
     aliases: ['検針月', '対象月', '明細月', '使用月', '請求月', 'usageMonth', 'usage_month', 'meterMonth'] },
   { key: 'hasStatement', label: '明細提出', type: 'string', target: 'contract',
@@ -75,7 +96,7 @@ export const FIELD_CATALOG: readonly FieldDefinition[] = [
   { key: 'agencyCode', label: '代理店', type: 'string', target: 'contract',
     aliases: ['代理店', '代理店名', '代理店コード', 'agency', 'agencyCode', 'agency_code'] },
   { key: 'staffName', label: '担当者', type: 'string', target: 'contract',
-    aliases: ['担当者', '担当', '販売員', 'staff', 'staffName', 'sales'] },
+    aliases: ['担当者', '担当', '販売員', '獲得者', '獲得者名', '獲得スタッフ', 'staff', 'staffName', 'sales'] },
   { key: 'venueName', label: '催事会場', type: 'string', target: 'contract',
     aliases: ['催事会場', '会場', '催事', '店舗', 'venue', 'event', 'eventName'] },
   { key: 'campaign', label: 'キャンペーン', type: 'string', target: 'contract',
@@ -83,7 +104,21 @@ export const FIELD_CATALOG: readonly FieldDefinition[] = [
   { key: 'statusCode', label: 'ステータス', type: 'string', target: 'contract',
     aliases: ['ステータス', '状態', '契約状態', 'status'] },
   { key: 'notes', label: '備考', type: 'string', target: 'contract',
-    aliases: ['備考', 'メモ', '特記事項', 'note', 'notes', 'memo', 'remarks'] },
+    aliases: ['備考', 'メモ', '特記事項', '備考欄', 'note', 'notes', 'memo', 'remarks'] },
+
+  // ── 実データ（電力）に存在する運用管理項目 ──
+  { key: 'matchedAt', label: 'マッチング日', type: 'date', target: 'contract',
+    aliases: ['マッチング日', 'マッチング完了日', 'matchedAt', 'matching_date'] },
+  { key: 'matchingMonth', label: 'マッチング月', type: 'number', target: 'contract',
+    aliases: ['マッチング月', 'matchingMonth', 'matching_month'] },
+  { key: 'documentMailStatus', label: '書類郵送', type: 'string', target: 'contract',
+    aliases: ['書類郵送', '書類発送', '郵送状況', 'documentMail', 'documentMailStatus'] },
+  { key: 'followUpStatus', label: '後確状況', type: 'string', target: 'contract',
+    aliases: ['後確状況', '後確', '後日確認', 'アフターコール', 'followUp', 'followUpStatus'] },
+  { key: 'areaName', label: 'エリア', type: 'string', target: 'contract',
+    aliases: ['エリア', '供給エリア', '電力エリア', 'area', 'areaName'] },
+  { key: 'paymentMethodLabel', label: '支払方法', type: 'string', target: 'contract',
+    aliases: ['支払方法', '支払い方法', '決済方法', 'paymentMethod', 'payment_method'] },
 ];
 
 export const FIELD_BY_KEY: ReadonlyMap<string, FieldDefinition> = new Map(
@@ -115,6 +150,18 @@ const ALIAS_INDEX: ReadonlyMap<string, string> = (() => {
  * CSV ヘッダからシステム項目を推測する（STEP3 の初期値）。
  * 推測結果はユーザーが必ず確認・修正できる。
  */
+/**
+ * 代理店列が「直営」等のとき、代理店ではなく**本部直販**を意味する。
+ * 代理店マスタに存在しない値としてエラーにしないための判定。
+ */
+const DIRECT_SALES_LABELS: ReadonlySet<string> = new Set(
+  ['直営', '直販', '自社', '自社直販', '本部', '本部直販', 'direct', 'self'].map(normalizeHeader),
+);
+
+export function isDirectSalesLabel(value: string): boolean {
+  return DIRECT_SALES_LABELS.has(normalizeHeader(value));
+}
+
 export function suggestFieldKey(header: string): string | null {
   return ALIAS_INDEX.get(normalizeHeader(header)) ?? null;
 }
@@ -151,7 +198,11 @@ export function normalizePostalCode(value: string | null | undefined): string | 
 
 export function normalizeNumber(value: string | null | undefined): number | null {
   if (value === null || value === undefined) return null;
-  const cleaned = String(value).normalize('NFKC').replace(/[,\s円]/g, '');
+  const cleaned = String(value)
+    .normalize('NFKC')
+    .replace(/[,\s円]/g, '')
+    // 実データの検針月は「8月」のように単位付きで入っている
+    .replace(/月$/, '');
   if (cleaned === '') return null;
   // 「5kW」のような表記は W へ換算する
   const kw = /^([\d.]+)\s*k?w$/i.exec(cleaned);

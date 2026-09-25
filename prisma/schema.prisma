@@ -840,6 +840,10 @@ model Customer {
   phone              String?
   /// 数字のみに正規化した電話番号（重複判定キー 3）
   phoneNormalized    String?
+  /// 携帯番号（実データに固定電話とは別列で存在する）
+  mobilePhone        String?
+  /// 顧客側の担当者名（法人契約などで契約者本人と窓口が違う場合）
+  contactPersonName  String?
   email              String?
   postalCode         String?
   prefecture         String?
@@ -910,6 +914,22 @@ model Contract {
   hasStatement        Boolean  @default(true)
   /// マッチング確認案件（業務管理費を手数料と相殺する）
   isMatchingConfirmed Boolean  @default(false)
+  /// 電気料金明細の請求金額（円）。手数料算定には使わず、使用量との突合に使う
+  usageAmountYen      Decimal? @db.Decimal(18, 2)
+
+  // ── 実データ（電力）の運用管理項目。docs/07_CSV_IMPORT.md ──
+  /// マッチング完了日
+  matchedAt      DateTime? @db.Date
+  /// マッチング月（YYYYMM）。月次の集計単位として運用側が使っている
+  matchingMonth  Int?
+  /// 書類郵送の状況。取りうる値が確定していないため生の文言を保持する（ASSUMPTIONS E-2）
+  documentMailStatus String?
+  /// 後確（後日確認）の状況。同上
+  followUpStatus     String?
+  /// 供給エリア（関西 / 関東 など）
+  areaName           String?
+  /// 支払方法の生の文言（口座 / カード など）。同上
+  paymentMethodLabel String?
 
   statusId       String
   appliedAt      DateTime? @db.Date

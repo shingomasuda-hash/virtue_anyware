@@ -26,6 +26,16 @@ export interface ContractWriteInput {
   hasStatement?: boolean;
   /** マッチング確認案件（業務管理費を相殺する） */
   isMatchingConfirmed?: boolean;
+  /** 電気料金明細の請求金額（円）。手数料算定には使わず、使用量との突合に使う */
+  usageAmountYen?: number | null;
+  /** マッチング完了日 / マッチング月（YYYYMM） */
+  matchedAt?: Date | null;
+  matchingMonth?: number | null;
+  /** 運用ステータス（取りうる値が未確定のため生の文言を保持する。ASSUMPTIONS E-2） */
+  documentMailStatus?: string | null;
+  followUpStatus?: string | null;
+  areaName?: string | null;
+  paymentMethodLabel?: string | null;
   statusId: string;
   appliedAt?: Date | null;
   contractedAt?: Date | null;
@@ -152,6 +162,17 @@ export async function createContract(
       usageMonth: input.usageMonth ?? null,
       hasStatement: input.hasStatement ?? true,
       isMatchingConfirmed: input.isMatchingConfirmed ?? false,
+      usageAmountYen:
+        input.usageAmountYen === null || input.usageAmountYen === undefined
+          ? null
+          : new Prisma.Decimal(input.usageAmountYen),
+      // 運用管理項目（金額計算には一切使わない）
+      matchedAt: input.matchedAt ?? null,
+      matchingMonth: input.matchingMonth ?? null,
+      documentMailStatus: input.documentMailStatus?.trim() || null,
+      followUpStatus: input.followUpStatus?.trim() || null,
+      areaName: input.areaName?.trim() || null,
+      paymentMethodLabel: input.paymentMethodLabel?.trim() || null,
       seasonalCoefficient:
         priced.usage.coefficient === null ? null : new Prisma.Decimal(priced.usage.coefficient),
       estimatedUsageKwh:
@@ -296,6 +317,20 @@ export async function updateContract(
       usageMonth: input.usageMonth === undefined ? undefined : input.usageMonth,
       hasStatement: input.hasStatement === undefined ? undefined : input.hasStatement,
       isMatchingConfirmed: input.isMatchingConfirmed === undefined ? undefined : input.isMatchingConfirmed,
+      usageAmountYen:
+        input.usageAmountYen === undefined
+          ? undefined
+          : input.usageAmountYen === null
+            ? null
+            : new Prisma.Decimal(input.usageAmountYen),
+      matchedAt: input.matchedAt === undefined ? undefined : input.matchedAt,
+      matchingMonth: input.matchingMonth === undefined ? undefined : input.matchingMonth,
+      documentMailStatus:
+        input.documentMailStatus === undefined ? undefined : (input.documentMailStatus?.trim() || null),
+      followUpStatus: input.followUpStatus === undefined ? undefined : (input.followUpStatus?.trim() || null),
+      areaName: input.areaName === undefined ? undefined : (input.areaName?.trim() || null),
+      paymentMethodLabel:
+        input.paymentMethodLabel === undefined ? undefined : (input.paymentMethodLabel?.trim() || null),
     },
   });
 

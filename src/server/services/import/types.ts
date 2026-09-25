@@ -25,6 +25,8 @@ export interface PlannedRow {
   resolved: {
     agencyId: string | null;
     agencyLabel: string | null;
+    /** 代理店列が「直営」等で、本部直販として取り込む行 */
+    directSales: boolean;
     statusId: string | null;
     statusLabel: string | null;
     supplierId: string | null;

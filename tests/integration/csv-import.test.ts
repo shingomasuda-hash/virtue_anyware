@@ -530,3 +530,126 @@ describe('階段表方式の CSV 取込（エバーグリーン MPプラン）',
     expect(seeded.agencyRuleId).toBeTruthy();
   });
 });
+
+/**
+ * 実運用の電力 CSV（32列）の取込。
+ * 列名・列構成は実ファイルのまま、値だけダミーに置き換えた
+ * `fixtures/csv/electricity-real-format.csv` を使う。
+ */
+describe('実データ形式（電力 32列）の取込', () => {
+  const FILE = 'electricity-real-format.csv';
+
+  it('32列のうち 26 列が自動でマッピングされ、金額系 6 列だけが未マッピングで残る', () => {
+    const parsed = parseCsv(fixture(FILE).buffer);
+    expect(parsed.headers).toHaveLength(32);
+
+    const mapping = suggestMapping(parsed.headers);
+    const unmapped = Object.entries(mapping).filter(([, v]) => !v).map(([k]) => k);
+    expect(unmapped).toEqual(['相対割引', '直営粗利', '別途', '粗利', '別途 (2)', 'ポイント']);
+  });
+
+  it('同名の「別途」列が 2 つあっても先の列の値が失われない', () => {
+    const parsed = parseCsv(fixture(FILE).buffer);
+    expect(parsed.headers.filter((h) => h.startsWith('別途'))).toEqual(['別途', '別途 (2)']);
+    // 2 行目は 別途=4000 / 別途(2)=1000。連番を付けないと 4000 が消える。
+    expect(parsed.rows[1]?.['別途']).toBe('4000');
+    expect(parsed.rows[1]?.['別途 (2)']).toBe('1000');
+  });
+
+  it('列名の違い（管理番号・契約者名・代表者名フリ・町域以降など）を吸収する', () => {
+    const parsed = parseCsv(fixture(FILE).buffer);
+    const mapping = suggestMapping(parsed.headers);
+    expect(mapping['管理番号']).toBe('contractNumber');
+    expect(mapping['契約者名']).toBe('customerName');
+    expect(mapping['代表者名フリ']).toBe('customerNameKana');
+    expect(mapping['代表生年月日']).toBe('birthDate');
+    expect(mapping['市区郡']).toBe('city');
+    expect(mapping['町域以降']).toBe('address');
+    expect(mapping['WEB入力日']).toBe('appliedAt');
+    expect(mapping['スイッチング日']).toBe('activatedAt');
+    expect(mapping['獲得者']).toBe('staffName');
+    expect(mapping['種別']).toBe('planName');
+    // 固定電話番号を主電話、携帯番号は別項目として取り込む
+    expect(mapping['固定電話番号']).toBe('phone');
+    expect(mapping['携帯番号']).toBe('mobilePhone');
+  });
+
+  it('「8月」のような単位付きの検針月を数値として解釈する', async () => {
+    const uploaded = await stage(FILE, { defaultStatusCode: '開通済', unknownAgency: 'warning' });
+    const plan = await planImport(hq, uploaded.batchId);
+    expect(plan.rows.map((r) => r.values.usageMonth)).toEqual([8, 6, 7, 5]);
+  });
+
+  it('代理店列が「直営」の行は本部直販として取り込み、代理店未登録エラーにしない', async () => {
+    const uploaded = await stage(FILE, { defaultStatusCode: '開通済' });
+    const plan = await planImport(hq, uploaded.batchId);
+
+    const direct = plan.rows[0];
+    expect(direct?.resolved.directSales).toBe(true);
+    expect(direct?.resolved.agencyId).toBeNull();
+    expect(direct?.decision).toBe('CREATE');
+    expect(direct?.issues.filter((i) => i.level === 'error')).toHaveLength(0);
+
+    // 実在しない代理店は従来どおりエラー
+    expect(plan.rows[2]?.decision).toBe('ERROR');
+    expect(plan.rows[2]?.issues.some((i) => i.field === 'agencyCode')).toBe(true);
+  });
+
+  it('代理店ユーザーは「直営」の行を自社案件として取り込めない', async () => {
+    const uploaded = await stage(FILE, { defaultStatusCode: '開通済', unknownAgency: 'warning' }, agencyUser);
+    const plan = await planImport(agencyUser, uploaded.batchId);
+    expect(plan.rows[0]?.decision).toBe('ERROR');
+    expect(plan.rows[0]?.issues.some((i) => i.message.includes('直営'))).toBe(true);
+  });
+
+  it('固定電話番号が空でも携帯番号を主電話として取り込む（重複判定キーを失わない）', async () => {
+    const uploaded = await stage(FILE, { defaultStatusCode: '開通済', unknownAgency: 'warning' });
+    await planImport(hq, uploaded.batchId);
+    await commitImport(hq, uploaded.batchId);
+
+    const customer = await prisma.customer.findFirst({
+      where: { organizationId: ids.org, externalCustomerId: null, name: { contains: '田中' } },
+    });
+    expect(customer?.phone).toBe('09000000204');
+    expect(customer?.phoneNormalized).toBe('09000000204');
+    expect(customer?.mobilePhone).toBe('09000000204');
+    expect(customer?.contactPersonName).toBe('窓口 次郎');
+  });
+
+  it('運用管理項目（マッチング日/月・書類郵送・後確状況・エリア・支払方法・電気料金）を保存する', async () => {
+    const uploaded = await stage(FILE, { defaultStatusCode: '開通済', unknownAgency: 'warning' });
+    await planImport(hq, uploaded.batchId);
+    await commitImport(hq, uploaded.batchId);
+
+    const contract = await prisma.contract.findFirst({
+      where: { organizationId: ids.org, contractNumber: 'U000201' },
+      include: { customer: true },
+    });
+    expect(contract).not.toBeNull();
+    // 直営は代理店を持たない
+    expect(contract?.agencyId).toBeNull();
+    expect(contract?.appliedAt?.toISOString().slice(0, 10)).toBe('2026-05-31');
+    expect(contract?.activatedAt?.toISOString().slice(0, 10)).toBe('2026-07-18');
+    expect(contract?.matchedAt?.toISOString().slice(0, 10)).toBe('2026-06-11');
+    expect(contract?.matchingMonth).toBe(202606);
+    expect(contract?.documentMailStatus).toBe('郵送済み');
+    expect(contract?.followUpStatus).toBe('OK');
+    expect(contract?.areaName).toBe('関西');
+    expect(contract?.paymentMethodLabel).toBe('口座');
+    expect(toNumber(contract?.usageAmountYen ?? 0)).toBe(16152);
+    expect(toNumber(contract?.actualUsageKwh ?? 0)).toBe(530);
+    expect(contract?.usageMonth).toBe(8);
+    // 住所は 市区郡 / 町域以降 から復元される
+    expect(contract?.customer.city).toBe('大阪市北区');
+    expect(contract?.customer.address).toBe('ダミー町1-1-1 201');
+    expect(contract?.customer.nameKana).toBe('サトウ タロウ');
+  });
+
+  it('未マッピングの金額列があっても取込は成功する（無視される）', async () => {
+    const uploaded = await stage(FILE, { defaultStatusCode: '開通済', unknownAgency: 'warning' });
+    await planImport(hq, uploaded.batchId);
+    const result = await commitImport(hq, uploaded.batchId);
+    expect(result.errorCount).toBe(0);
+    expect(result.successCount).toBe(4);
+  });
+});
